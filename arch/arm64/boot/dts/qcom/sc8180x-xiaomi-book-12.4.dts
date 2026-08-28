@@ -29,7 +29,7 @@
 	sound {
 		compatible = "qcom,sdm845-sndcard";
 		model = "Xiaomi-Book-12.4";
-		status = "disabled";
+		status = "okay";
 
 		mm1-dai-link {
 			link-name = "MultiMedia1";
@@ -491,7 +491,7 @@
 };
 
 &gpu {
-	status = "disabled";
+	status = "okay";
 
 	zap-shader {
 		memory-region = <&gpu_mem>;
@@ -502,7 +502,7 @@
 &i2c2 {
 	clock-frequency = <400000>;
 
-	status = "disabled";
+	status = "okay";
 
 	// Based on DSDT
 	// Device (TSC1), Method _CRS
@@ -572,15 +572,15 @@
     qcom,current-limit-microamp = <17500>;
     qcom,cabc;
 
-	status = "disabled";
+	status = "okay";
 };
 
 &mdss {
-	status = "disabled";
+	status = "okay";
 };
 
 &mdss_dsi0 {
-	status = "disabled";
+	status = "okay";
 	vdda-supply = <&vreg_l3c_1p2>;
 	refgen-supply = <&refgen>;
 
@@ -616,7 +616,7 @@
 };
 
 &mdss_dsi0_phy {
-	status = "disabled";
+	status = "okay";
 	vdds-supply = <&vreg_l5e_0p88>;
 };
 
@@ -672,7 +672,7 @@
 };
 
 &pmc8180c_lpg {
-	status = "disabled";
+	status = "okay";
 };
 
 &qupv3_id_0 {
@@ -702,7 +702,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		qcom,intents = <512 20>;
-		status = "disabled";
+		status = "okay";
 
 		service@3 {
 			compatible = "qcom,q6core";
@@ -790,7 +790,7 @@
 		qcom,ee = <1>;
 		qcom,num-ees = <4>;
 		iommus = <&apps_smmu 0x1b46 0x0>;
-		status = "disabled";
+		status = "okay";
 	};
 
 	slim: slim-ngd@171c0000 {
@@ -803,7 +803,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		status = "disabled";
+		status = "okay";
 	};
 };
 
@@ -817,14 +817,14 @@
 	no-mmc;
 	no-sdio;
 
-	status = "disabled";
+	status = "okay";
 };
 
 &uart13 {
 	pinctrl-0 = <&uart13_state>;
 	pinctrl-names = "default";
 
-	status = "disabled";
+	status = "okay";
 
 	bluetooth {
 		compatible = "qcom,wcn3998-bt";
@@ -946,7 +946,7 @@
 	vdd-3.3-ch0-supply = <&vreg_l11c_3p3>;
 	vdd-3.3-ch1-supply = <&vreg_l10c_3p3>;
 
-	status = "disabled";
+	status = "okay";
 };
 
 &xo_board_clk {
