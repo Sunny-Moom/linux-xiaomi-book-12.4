@@ -18,6 +18,8 @@
 
 #define UCSI_BUF_SIZE                   48
 
+#define UCSI_PDR_REGISTRATION_DELAY_MS 2000
+
 #define MSG_TYPE_REQ_RESP               1
 #define UCSI_BUF_SIZE                   48
 
@@ -67,10 +69,11 @@ struct pmic_glink_ucsi {
 	struct mutex lock;	/* protects concurrent access to PMIC Glink interface */
 
 	struct work_struct notify_work;
-	struct work_struct register_work;
+	struct delayed_work register_work;
 	spinlock_t state_lock;
 	bool ucsi_registered;
 	bool pd_running;
+	bool trace_next_read;
 
 	u8 read_buf[UCSI_BUF_SIZE];
 };
@@ -218,6 +221,20 @@ static void pmic_glink_ucsi_read_ack(struct pmic_glink_ucsi *ucsi, const void *d
 {
 	const struct ucsi_read_buf_resp_msg *resp = data;
 
+	if (len < sizeof(*resp)) {
+		dev_err(ucsi->dev, "short UCSI read response: %d bytes\n", len);
+		return;
+	}
+
+	if (ucsi->trace_next_read) {
+		dev_info(ucsi->dev,
+			 "UCSI registration read response: owner %#x type %#x opcode %#x ret %#x data %*ph\n",
+			 le32_to_cpu(resp->hdr.owner), le32_to_cpu(resp->hdr.type),
+			 le32_to_cpu(resp->hdr.opcode), le32_to_cpu(resp->ret_code),
+			 UCSI_BUF_SIZE, resp->buf);
+		ucsi->trace_next_read = false;
+	}
+
 	if (resp->ret_code)
 		return;
 
@@ -252,7 +269,9 @@ static void pmic_glink_ucsi_notify(struct work_struct *work)
 
 static void pmic_glink_ucsi_register(struct work_struct *work)
 {
-	struct pmic_glink_ucsi *ucsi = container_of(work, struct pmic_glink_ucsi, register_work);
+	struct pmic_glink_ucsi *ucsi = container_of(to_delayed_work(work),
+						     struct pmic_glink_ucsi,
+						     register_work);
 	unsigned long flags;
 	bool pd_running;
 	int ret;
@@ -262,6 +281,7 @@ static void pmic_glink_ucsi_register(struct work_struct *work)
 	spin_unlock_irqrestore(&ucsi->state_lock, flags);
 
 	if (!ucsi->ucsi_registered && pd_running) {
+		ucsi->trace_next_read = true;
 		ret = ucsi_register(ucsi->ucsi);
 		if (ret)
 			dev_err(ucsi->dev,
@@ -297,16 +317,27 @@ static void pmic_glink_ucsi_pdr_notify(void *priv, int state)
 {
 	struct pmic_glink_ucsi *ucsi = priv;
 	unsigned long flags;
+	unsigned long delay = 0;
 
 	spin_lock_irqsave(&ucsi->state_lock, flags);
 	ucsi->pd_running = (state == SERVREG_SERVICE_STATE_UP);
 	spin_unlock_irqrestore(&ucsi->state_lock, flags);
-	schedule_work(&ucsi->register_work);
+
+	if (state == SERVREG_SERVICE_STATE_UP) {
+		delay = msecs_to_jiffies(UCSI_PDR_REGISTRATION_DELAY_MS);
+		dev_info(ucsi->dev, "delaying UCSI registration by %u ms after charger_pd startup\n",
+			 UCSI_PDR_REGISTRATION_DELAY_MS);
+	}
+
+	mod_delayed_work(system_wq, &ucsi->register_work, delay);
 }
 
 static void pmic_glink_ucsi_destroy(void *data)
 {
 	struct pmic_glink_ucsi *ucsi = data;
+
+	cancel_delayed_work_sync(&ucsi->register_work);
+	cancel_work_sync(&ucsi->notify_work);
 
 	/* Protect to make sure we're not in a middle of a transaction from a glink callback */
 	mutex_lock(&ucsi->lock);
@@ -344,7 +375,7 @@ static int pmic_glink_ucsi_probe(struct auxiliary_device *adev,
 	dev_set_drvdata(dev, ucsi);
 
 	INIT_WORK(&ucsi->notify_work, pmic_glink_ucsi_notify);
-	INIT_WORK(&ucsi->register_work, pmic_glink_ucsi_register);
+	INIT_DELAYED_WORK(&ucsi->register_work, pmic_glink_ucsi_register);
 	init_completion(&ucsi->read_ack);
 	init_completion(&ucsi->write_ack);
 	spin_lock_init(&ucsi->state_lock);
