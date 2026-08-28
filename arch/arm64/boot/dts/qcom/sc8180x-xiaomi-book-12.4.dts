@@ -29,6 +29,7 @@
 	sound {
 		compatible = "qcom,sdm845-sndcard";
 		model = "Xiaomi-Book-12.4";
+		status = "disabled";
 
 		mm1-dai-link {
 			link-name = "MultiMedia1";
@@ -263,6 +264,7 @@
 		enable-active-high;
 
 		regulator-boot-on;
+		status = "disabled";
 	};
 
 	usbprim-sbu-mux {
@@ -489,7 +491,7 @@
 };
 
 &gpu {
-	status = "okay";
+	status = "disabled";
 
 	zap-shader {
 		memory-region = <&gpu_mem>;
@@ -500,7 +502,7 @@
 &i2c2 {
 	clock-frequency = <400000>;
 
-	status = "okay";
+	status = "disabled";
 
 	// Based on DSDT
 	// Device (TSC1), Method _CRS
@@ -528,7 +530,7 @@
 	pinctrl-0 = <&i2c7_active>;
 	pinctrl-names = "default";
 
-	status = "okay";
+	status = "disabled";
 
     // Charger
     // Device (SXB), Method _CRS
@@ -570,15 +572,15 @@
     qcom,current-limit-microamp = <17500>;
     qcom,cabc;
 
-    status = "okay";
+	status = "disabled";
 };
 
 &mdss {
-	status = "okay";
+	status = "disabled";
 };
 
 &mdss_dsi0 {
-	status = "okay";
+	status = "disabled";
 	vdda-supply = <&vreg_l3c_1p2>;
 	refgen-supply = <&refgen>;
 
@@ -614,7 +616,7 @@
 };
 
 &mdss_dsi0_phy {
-	status = "okay";
+	status = "disabled";
 	vdds-supply = <&vreg_l5e_0p88>;
 };
 
@@ -649,8 +651,6 @@
 
 	//wake-gpios = <&tlmm 104 GPIO_ACTIVE_HIGH>;
 
-	vddpe-3v3-supply = <&vreg_nvme_3p3>;
-
 	num-lanes = <2>;
 
 	pinctrl-names = "default";
@@ -672,7 +672,7 @@
 };
 
 &pmc8180c_lpg {
-	status = "okay";
+	status = "disabled";
 };
 
 &qupv3_id_0 {
@@ -691,7 +691,7 @@
 	memory-region = <&adsp_mem>;
 	firmware-name = "qcom/XIAOMI/BOOK124/qcadsp8180.mbn";
 
-	status = "okay";
+	status = "disabled";
 };
 
 &remoteproc_adsp_glink {
@@ -768,14 +768,14 @@
 	memory-region = <&cdsp_mem>;
 	firmware-name = "qcom/XIAOMI/BOOK124/qccdsp8180.mbn";
 
-	status = "okay";
+	status = "disabled";
 };
 
 &remoteproc_mpss {
 	memory-region = <&mpss_mem>;
 	firmware-name = "qcom/XIAOMI/BOOK124/qcmpss8180_nm.mbn";
 
-	status = "okay";
+	status = "disabled";
 };
 
 &soc {
@@ -789,6 +789,7 @@
 		qcom,ee = <1>;
 		qcom,num-ees = <4>;
 		iommus = <&apps_smmu 0x1b46 0x0>;
+		status = "disabled";
 	};
 
 	slim: slim-ngd@171c0000 {
@@ -801,7 +802,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		status = "okay";
+		status = "disabled";
 	};
 };
 
@@ -815,14 +816,14 @@
 	no-mmc;
 	no-sdio;
 
-	status = "okay";
+	status = "disabled";
 };
 
 &uart13 {
 	pinctrl-0 = <&uart13_state>;
 	pinctrl-names = "default";
 
-	status = "okay";
+	status = "disabled";
 
 	bluetooth {
 		compatible = "qcom,wcn3998-bt";
@@ -944,7 +945,7 @@
 	vdd-3.3-ch0-supply = <&vreg_l11c_3p3>;
 	vdd-3.3-ch1-supply = <&vreg_l10c_3p3>;
 
-	status = "okay";
+	status = "disabled";
 };
 
 &xo_board_clk {
