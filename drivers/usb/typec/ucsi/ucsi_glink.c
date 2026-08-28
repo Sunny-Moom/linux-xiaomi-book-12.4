@@ -315,14 +315,20 @@ static void pmic_glink_ucsi_register(struct work_struct *work)
 	struct pmic_glink_ucsi *ucsi = container_of(work, struct pmic_glink_ucsi, register_work);
 	unsigned long flags;
 	bool pd_running;
+	int ret;
 
 	spin_lock_irqsave(&ucsi->state_lock, flags);
 	pd_running = ucsi->pd_running;
 	spin_unlock_irqrestore(&ucsi->state_lock, flags);
 
 	if (!ucsi->ucsi_registered && pd_running) {
-		ucsi_register(ucsi->ucsi);
-		ucsi->ucsi_registered = true;
+		ret = ucsi_register(ucsi->ucsi);
+		if (ret)
+			dev_err(ucsi->dev,
+				"failed to register UCSI interface: %d (version %#x)\n",
+				ret, ucsi->ucsi->version);
+		else
+			ucsi->ucsi_registered = true;
 	} else if (ucsi->ucsi_registered && !pd_running) {
 		ucsi_unregister(ucsi->ucsi);
 		ucsi->ucsi_registered = false;
