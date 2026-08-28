@@ -502,7 +502,11 @@
 &i2c2 {
 	clock-frequency = <400000>;
 
-	status = "okay";
+	/*
+	 * Binding the GENI I2C controller currently starves RCU on this device.
+	 * Keep the touchscreen isolated until the controller path is fixed.
+	 */
+	status = "disabled";
 
 	// Based on DSDT
 	// Device (TSC1), Method _CRS
