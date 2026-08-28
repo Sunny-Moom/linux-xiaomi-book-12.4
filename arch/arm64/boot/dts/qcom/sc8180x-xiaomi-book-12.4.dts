@@ -780,7 +780,8 @@
 	memory-region = <&mpss_mem>;
 	firmware-name = "qcom/XIAOMI/BOOK124/qcmpss8180_nm.mbn";
 
-	status = "disabled";
+	/* The non-modem image provides the WLFW service used by WCN3990. */
+	status = "okay";
 };
 
 &soc {
