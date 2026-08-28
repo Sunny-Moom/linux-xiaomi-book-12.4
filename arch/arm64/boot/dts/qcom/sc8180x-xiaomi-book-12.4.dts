@@ -691,7 +691,7 @@
 	memory-region = <&adsp_mem>;
 	firmware-name = "qcom/XIAOMI/BOOK124/qcadsp8180.mbn";
 
-	status = "disabled";
+	status = "okay";
 };
 
 &remoteproc_adsp_glink {
@@ -702,6 +702,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		qcom,intents = <512 20>;
+		status = "disabled";
 
 		service@3 {
 			compatible = "qcom,q6core";
