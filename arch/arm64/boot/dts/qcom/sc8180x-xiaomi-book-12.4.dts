@@ -29,7 +29,7 @@
 	sound {
 		compatible = "qcom,sdm845-sndcard";
 		model = "Xiaomi-Book-12.4";
-		status = "okay";
+		status = "disabled";
 
 		mm1-dai-link {
 			link-name = "MultiMedia1";
@@ -702,7 +702,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		qcom,intents = <512 20>;
-		status = "okay";
+		status = "disabled";
 
 		service@3 {
 			compatible = "qcom,q6core";
@@ -790,7 +790,7 @@
 		qcom,ee = <1>;
 		qcom,num-ees = <4>;
 		iommus = <&apps_smmu 0x1b46 0x0>;
-		status = "okay";
+		status = "disabled";
 	};
 
 	slim: slim-ngd@171c0000 {
@@ -803,7 +803,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		status = "okay";
+		status = "disabled";
 	};
 };
 
@@ -828,6 +828,7 @@
 
 	bluetooth {
 		compatible = "qcom,wcn3998-bt";
+		firmware-name = "crnv21.bin", "crbtfw21.tlv";
 
 		vddio-supply = <&vreg_s4a_1p8>;
 		vddxo-supply = <&vreg_l7a_1p8>;
