@@ -1717,10 +1717,14 @@ static int ath10k_snoc_probe(struct platform_device *pdev)
 
 	dev = &pdev->dev;
 	drv_data = device_get_match_data(dev);
-	if (!drv_data) {
-		dev_err(dev, "failed to find matching device tree id\n");
-		return -EINVAL;
-	}
+	/*
+	 * Xiaomi Book S exposes QWLN through ACPI rather than a DT node.  The
+	 * resources and WCN3990 variant are identical to the qcom,wcn3990-wifi
+	 * binding, so a platform instance created by the ACPI glue can use the
+	 * default descriptor when no OF match data is available.
+	 */
+	if (!drv_data)
+		drv_data = &drv_priv;
 
 	ret = dma_set_mask_and_coherent(dev, drv_data->dma_mask);
 	if (ret) {
