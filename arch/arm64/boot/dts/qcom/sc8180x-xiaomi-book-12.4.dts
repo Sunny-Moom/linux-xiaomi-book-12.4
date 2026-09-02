@@ -22,6 +22,15 @@
 	model = "Xiaomi Book 12.4";
 	compatible = "xiaomi,book-12.4", "qcom,sc8180x";
 
+	/* Windows configures the panel through PMIC LPG PWM channel 4.
+	 * The firmware leaves this channel at an ~1.17 kHz period; use that
+	 * period here and let pwm-backlight scale the duty cycle. */
+	backlight: backlight {
+		compatible = "pwm-backlight";
+		pwms = <&pmc8180c_lpg 4 851667>;
+		qcom,min-brightness = <40>;
+	};
+
 	aliases {
 		serial0 = &uart13;
 	};
@@ -29,7 +38,16 @@
 	sound {
 		compatible = "qcom,sdm845-sndcard";
 		model = "Xiaomi-Book-12.4";
-		status = "disabled";
+		status = "okay";
+
+		audio-routing =
+			"RX_BIAS", "MCLK",
+			"AMIC2", "MIC BIAS2",
+			"MM_DL1", "MultiMedia1 Playback",
+			"MM_DL3", "MultiMedia3 Playback",
+			"MultiMedia2 Capture", "MM_UL2",
+			"SpkrLeft IN", "SPK1 OUT",
+			"SpkrRight IN", "SPK2 OUT";
 
 		mm1-dai-link {
 			link-name = "MultiMedia1";
@@ -52,6 +70,55 @@
 
 			cpu {
 				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA3>;
+			};
+		};
+
+		slim-dai-link {
+			link-name = "SLIM Playback";
+
+			cpu {
+				sound-dai = <&q6afedai SLIMBUS_0_RX>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&left_spkr>, <&right_spkr>,
+					    <&swm 0>, <&wcd9340 0>;
+			};
+		};
+
+		slimcap-dai-link {
+			link-name = "SLIM Capture";
+
+			cpu {
+				sound-dai = <&q6afedai SLIMBUS_0_TX>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&wcd9340 1>;
+			};
+		};
+
+		slim-wcd-dai-link {
+			link-name = "SLIM WCD Playback";
+
+			cpu {
+				sound-dai = <&q6afedai SLIMBUS_1_RX>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&wcd9340 2>;
 			};
 		};
 	};
@@ -499,23 +566,20 @@
 	};
 };
 
-&i2c2 {
+/*
+ * Windows exposes the touchscreen bus as I2C2, but its MMIO base is
+ * 0x00884000, which maps to Linux's &i2c1 / QUP0 SE1.
+ */
+&i2c1 {
 	clock-frequency = <400000>;
+	pinctrl-0 = <&i2c1_active>;
+	pinctrl-names = "default";
+	status = "okay";
 
-	/*
-	 * Binding the GENI I2C controller currently starves RCU on this device.
-	 * Keep the touchscreen isolated until the controller path is fixed.
-	 */
-	status = "disabled";
-
-	// Based on DSDT
-	// Device (TSC1), Method _CRS
-	// Name (LPXC, Package (0x01)
-	hid@4f {
+	touchscreen@4f {
 		compatible = "hid-over-i2c";
 		reg = <0x4f>;
 		hid-descr-addr = <0x1>;
-		panel = <&display_panel>;
 
 		vdd-supply = <&vreg_l4c_3p3>;
 		vddl-supply = <&vreg_l12e_1p8>;
@@ -524,7 +588,7 @@
 		interrupts-extended = <&tlmm 122 IRQ_TYPE_LEVEL_LOW>;
 
 		pinctrl-names = "default";
-		pinctrl-0 = <&ts_active_state>;
+		pinctrl-0 = <&ts_irq_active>;
 	};
 };
 
@@ -560,12 +624,17 @@
     */
 };
 
+/* The physical power button is wired to the PMIC PON block. */
+&pmc8180_pwrkey {
+	status = "okay";
+};
+
 // From PNC357DB1.xml
 // FIXME: Due to PEP0 defination, device is using PMIC-WLED
 // 		  backlight, need to confirm the configuration.
 // FIXME: The units may be wrong. Need to be verified
 &pmc8180c_wled {
-    qcom,switching-freq = <1920>;
+	label = "backlight-wled";
     // From PNC357DB1-4 Datasheet:
     // LED Light Bar Power Supply Current: {
     //     "Symbol": "LED_K(1-8)",
@@ -574,9 +643,10 @@
     // }
     qcom,num-strings = <2>;
     qcom,current-limit-microamp = <17500>;
-    qcom,cabc;
+	qcom,modulator-sel = <1>;
+	max-brightness = <511>;
 
-	status = "okay";
+	status = "disabled";
 };
 
 &mdss {
@@ -595,7 +665,7 @@
 		vdd1-supply = <&vreg_l1c_1p8>;
 		vdd-supply = <&vreg_l12a_1p8>;
 
-		backlight = <&pmc8180c_wled>;
+		backlight = <&backlight>;
 		reset-gpios = <&tlmm 116 GPIO_ACTIVE_LOW>;
 		enable-gpios = <&tlmm 6 GPIO_ACTIVE_HIGH>;
 
@@ -706,7 +776,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		qcom,intents = <512 20>;
-		status = "disabled";
+		status = "okay";
 
 		service@3 {
 			compatible = "qcom,q6core";
@@ -795,7 +865,7 @@
 		qcom,ee = <1>;
 		qcom,num-ees = <4>;
 		iommus = <&apps_smmu 0x1b46 0x0>;
-		status = "disabled";
+		status = "okay";
 	};
 
 	slim: slim-ngd@171c0000 {
@@ -807,8 +877,103 @@
 		iommus = <&apps_smmu 0x1b46 0x0>;
 		#address-cells = <1>;
 		#size-cells = <0>;
+		status = "okay";
 
-		status = "disabled";
+		slim@1 {
+			reg = <1>;
+			#address-cells = <2>;
+			#size-cells = <0>;
+
+			wcd9340_ifd: ifd@0,0 {
+				compatible = "slim217,250";
+				reg = <0 0>;
+			};
+
+			wcd9340: codec@1,0 {
+				compatible = "slim217,250";
+				reg = <1 0>;
+				slim-ifc-dev = <&wcd9340_ifd>;
+
+				#sound-dai-cells = <1>;
+				interrupts-extended = <&tlmm 123 IRQ_TYPE_LEVEL_HIGH>;
+				interrupt-controller;
+				#interrupt-cells = <1>;
+
+				reset-gpios = <&tlmm 143 GPIO_ACTIVE_HIGH>;
+				clock-names = "extclk";
+				clocks = <&rpmhcc RPMH_LN_BB_CLK2>;
+				#clock-cells = <0>;
+				clock-frequency = <9600000>;
+				clock-output-names = "mclk";
+
+				vdd-buck-supply = <&vreg_s4a_1p8>;
+				vdd-buck-sido-supply = <&vreg_s4a_1p8>;
+				vdd-tx-supply = <&vreg_s4a_1p8>;
+				vdd-rx-supply = <&vreg_s4a_1p8>;
+				vdd-io-supply = <&vreg_s4a_1p8>;
+
+				pinctrl-0 = <&wcd_intr_default>;
+				pinctrl-names = "default";
+				qcom,micbias1-microvolt = <1800000>;
+				qcom,micbias2-microvolt = <1800000>;
+				qcom,micbias3-microvolt = <1800000>;
+				qcom,micbias4-microvolt = <1800000>;
+				/* WCD934x MBHC thresholds (same electrical front-end as
+				 * Qualcomm SC8280XP/SDM845 reference designs).  Without
+				 * these properties the driver falls back to 500 mV button
+				 * thresholds and can misclassify a stereo plug as mono. */
+				qcom,mbhc-buttons-vthreshold-microvolt =
+					<75000 150000 237000 500000
+					 500000 500000 500000 500000>;
+				qcom,mbhc-headset-vthreshold-microvolt = <1700000>;
+				qcom,mbhc-headphone-vthreshold-microvolt = <50000>;
+
+				#address-cells = <1>;
+				#size-cells = <1>;
+
+				wcdgpio: gpio-controller@42 {
+					compatible = "qcom,wcd9340-gpio";
+					gpio-controller;
+					#gpio-cells = <2>;
+					reg = <0x42 0x2>;
+				};
+
+				swm: soundwire@c85 {
+					compatible = "qcom,soundwire-v1.3.0";
+					reg = <0xc85 0x40>;
+					interrupts-extended = <&wcd9340 20>;
+					qcom,dout-ports = <6>;
+					qcom,din-ports = <2>;
+					qcom,ports-sinterval-low = /bits/ 8 <0x07 0x1f 0x3f 0x07 0x1f 0x3f 0x0f 0x0f>;
+					qcom,ports-offset1 = /bits/ 8 <0x01 0x02 0x0c 0x06 0x12 0x0d 0x07 0x0a>;
+					qcom,ports-offset2 = /bits/ 8 <0x00 0x00 0x1f 0x00 0x00 0x1f 0x00 0x00>;
+					#sound-dai-cells = <1>;
+					clocks = <&wcd9340>;
+					clock-names = "iface";
+					#address-cells = <2>;
+					#size-cells = <0>;
+
+					left_spkr: speaker@0,3 {
+						compatible = "sdw10217211000";
+						reg = <0 3>;
+						powerdown-gpios = <&wcdgpio 1 GPIO_ACTIVE_LOW>;
+						#thermal-sensor-cells = <0>;
+						sound-name-prefix = "SpkrLeft";
+						#sound-dai-cells = <0>;
+					};
+
+					right_spkr: speaker@0,4 {
+						compatible = "sdw10217211000";
+						reg = <0 4>;
+						powerdown-gpios = <&wcdgpio 2 GPIO_ACTIVE_LOW>;
+						#thermal-sensor-cells = <0>;
+						sound-name-prefix = "SpkrRight";
+						#sound-dai-cells = <0>;
+					};
+				};
+			};
+		};
+
 	};
 };
 
@@ -945,6 +1110,8 @@
 
 &wifi {
 	memory-region = <&wlan_mem>;
+	/* WCN3990 firmware on this SC8180X accepts an 8-bit host-cap request. */
+	qcom,snoc-host-cap-8bit-quirk;
 
 	vdd-0.8-cx-mx-supply = <&vreg_l1e_0p75>;
 	vdd-1.8-xo-supply = <&vreg_l7a_1p8>;
@@ -967,6 +1134,14 @@
 		function = "gpio";
 
 		bias-disable;
+	};
+
+	wcd_intr_default: wcd-intr-default-state {
+		pins = "gpio123";
+		function = "gpio";
+		bias-pull-down;
+		drive-strength = <2>;
+		input-enable;
 	};
 
 	i2c1_active: i2c1-active-state {
@@ -1091,22 +1266,11 @@
 		bias-pull-up;
 	};
 
-	ts_active_state: ts-active-state {
-		int-n-pins {
-			pins = "gpio122";
-			function = "gpio";
+	ts_irq_active: ts-irq-active-state {
+		pins = "gpio122";
+		function = "gpio";
 
-			bias-pull-up;
-			drive-strength = <2>;
-		};
-
-		reset-n-pins {
-			pins = "gpio54";
-			function = "gpio";
-
-			bias-pull-up;
-			drive-strength = <2>;
-		};
+		bias-pull-up;
 	};
 
 	usbprim_sbu_default: usbprim-sbu-state {

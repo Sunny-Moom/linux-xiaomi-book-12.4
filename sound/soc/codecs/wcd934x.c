@@ -2172,7 +2172,12 @@ static int wcd934x_init_dmic(struct snd_soc_component *comp)
 	u32 def_dmic_rate, dmic_clk_drv;
 	int ret;
 
-	ret = wcd_dt_parse_mbhc_data(comp->dev, &wcd->mbhc_cfg);
+	/* The component is instantiated as a platform child and its own
+	 * of_node does not carry the SLIM codec's MBHC properties.  Parse the
+	 * properties from the parent SLIM device node (the same node used by
+	 * wcd934x_codec_parse_data()) so hot-plug thresholds are not silently
+	 * reset to defaults. */
+	ret = wcd_dt_parse_mbhc_data(&wcd->sdev->dev, &wcd->mbhc_cfg);
 	if (ret)
 		return ret;
 

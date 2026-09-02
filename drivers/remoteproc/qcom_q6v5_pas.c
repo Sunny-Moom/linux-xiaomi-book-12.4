@@ -1195,7 +1195,8 @@ static const struct qcom_pas_data sc8180x_mpss_resource = {
 	.crash_reason_smem = 421,
 	.firmware_name = "modem.mdt",
 	.pas_id = 4,
-	.auto_boot = false,
+	/* The in-kernel RAM-only RMTFS service is available before modules load. */
+	.auto_boot = true,
 	.proxy_pd_names = (char*[]){
 		"cx",
 		NULL

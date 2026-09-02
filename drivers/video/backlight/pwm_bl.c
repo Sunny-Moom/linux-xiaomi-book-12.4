@@ -29,6 +29,7 @@ struct pwm_bl_data {
 	unsigned int		scale;
 	unsigned int		post_pwm_on_delay;
 	unsigned int		pwm_off_delay;
+	unsigned int		minimum_brightness;
 	int			(*notify)(struct device *,
 					  int brightness);
 	void			(*notify_after)(struct device *,
@@ -93,6 +94,12 @@ static int pwm_backlight_update_status(struct backlight_device *bl)
 	struct pwm_bl_data *pb = bl_get_data(bl);
 	int brightness = backlight_get_brightness(bl);
 	struct pwm_state state;
+
+	/* Keep the panel visibly on at the bottom of the user range. A real
+	 * blank/suspend request has non-zero bl->props.power and may turn it off. */
+	if (!brightness && pb->minimum_brightness &&
+	    bl->props.power == FB_BLANK_UNBLANK)
+		brightness = pb->minimum_brightness;
 
 	if (pb->notify)
 		brightness = pb->notify(pb->dev, brightness);
@@ -476,6 +483,8 @@ static int pwm_backlight_probe(struct platform_device *pdev)
 	pb->enabled = false;
 	pb->post_pwm_on_delay = data->post_pwm_on_delay;
 	pb->pwm_off_delay = data->pwm_off_delay;
+	of_property_read_u32(pdev->dev.of_node, "qcom,min-brightness",
+			    &pb->minimum_brightness);
 
 	pb->enable_gpio = devm_gpiod_get_optional(&pdev->dev, "enable",
 						  GPIOD_ASIS);
