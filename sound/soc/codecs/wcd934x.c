@@ -58,6 +58,11 @@
 #define WCD934X_MCLK_CLK_12P288MHZ	12288000
 #define WCD934X_MCLK_CLK_9P6MHZ		9600000
 
+static bool wcd934x_trace_xiaomi_book(void)
+{
+	return of_machine_is_compatible("xiaomi,book-12.4");
+}
+
 /* Only valid for 9.6 MHz mclk */
 #define WCD9XXX_DMIC_SAMPLE_RATE_2P4MHZ 2400000
 #define WCD9XXX_DMIC_SAMPLE_RATE_4P8MHZ 4800000
@@ -1700,6 +1705,29 @@ static int wcd934x_slim_set_hw_params(struct wcd934x_codec *wcd,
 	u16 payload = 0;
 	int ret, i;
 
+	if (wcd934x_trace_xiaomi_book() &&
+	    direction == SNDRV_PCM_STREAM_PLAYBACK &&
+	    dai_data == &wcd->dai[AIF1_PB] &&
+	    list_empty(slim_ch_list)) {
+		for (i = 0; i < 2; i++) {
+			if (!wcd->rx_chs[i].ch_num)
+				wcd->rx_chs[i].ch_num = 144 + i;
+
+			if (list_empty(&wcd->rx_chs[i].list)) {
+				list_add_tail(&wcd->rx_chs[i].list, slim_ch_list);
+				dev_info(wcd->dev,
+					 "Xiaomi WCD934x fallback SLIM RX%d: port=%u shift=%u ch=0x%02x\n",
+					 i, wcd->rx_chs[i].port,
+					 wcd->rx_chs[i].shift,
+					 wcd->rx_chs[i].ch_num);
+			} else {
+				dev_warn(wcd->dev,
+					 "Xiaomi WCD934x fallback SLIM RX%d busy\n",
+					 i);
+			}
+		}
+	}
+
 	cfg->ch_count = 0;
 	cfg->direction = direction;
 	cfg->port_mask = 0;
@@ -1875,6 +1903,8 @@ static int wcd934x_trigger(struct snd_pcm_substream *substream, int cmd,
 	struct wcd_slim_codec_dai_data *dai_data;
 	struct wcd934x_codec *wcd;
 	struct slim_stream_config *cfg;
+	bool xiaomi = wcd934x_trace_xiaomi_book();
+	int ret, ret2;
 
 	wcd = snd_soc_component_get_drvdata(dai->component);
 
@@ -1885,14 +1915,52 @@ static int wcd934x_trigger(struct snd_pcm_substream *substream, int cmd,
 	case SNDRV_PCM_TRIGGER_RESUME:
 	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
 		cfg = &dai_data->sconfig;
-		slim_stream_prepare(dai_data->sruntime, cfg);
-		slim_stream_enable(dai_data->sruntime);
+		if (xiaomi)
+			dev_info(wcd->dev,
+				 "Xiaomi WCD934x trigger start: dai=%d stream=%d rate=%u bps=%u dir=%u ports=0x%lx channels=%u\n",
+				 dai->id, substream->stream, cfg->rate, cfg->bps,
+				 cfg->direction, cfg->port_mask, cfg->ch_count);
+
+		ret = slim_stream_prepare(dai_data->sruntime, cfg);
+		if (xiaomi)
+			dev_info(wcd->dev,
+				 "Xiaomi WCD934x slim_stream_prepare ret=%d\n",
+				 ret);
+		if (ret)
+			return ret;
+
+		ret = slim_stream_enable(dai_data->sruntime);
+		if (xiaomi)
+			dev_info(wcd->dev,
+				 "Xiaomi WCD934x slim_stream_enable ret=%d\n",
+				 ret);
+		if (ret) {
+			ret2 = slim_stream_unprepare(dai_data->sruntime);
+			if (xiaomi)
+				dev_info(wcd->dev,
+					 "Xiaomi WCD934x slim_stream_unprepare after enable failure ret=%d\n",
+					 ret2);
+			return ret;
+		}
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
 	case SNDRV_PCM_TRIGGER_SUSPEND:
 	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
-		slim_stream_disable(dai_data->sruntime);
-		slim_stream_unprepare(dai_data->sruntime);
+		ret = slim_stream_disable(dai_data->sruntime);
+		if (xiaomi)
+			dev_info(wcd->dev,
+				 "Xiaomi WCD934x slim_stream_disable ret=%d\n",
+				 ret);
+
+		ret2 = slim_stream_unprepare(dai_data->sruntime);
+		if (xiaomi)
+			dev_info(wcd->dev,
+				 "Xiaomi WCD934x slim_stream_unprepare ret=%d\n",
+				 ret2);
+		if (ret)
+			return ret;
+		if (ret2)
+			return ret2;
 		break;
 	default:
 		break;
@@ -3336,8 +3404,22 @@ static int slim_rx_mux_put(struct snd_kcontrol *kc,
 			list_add_tail(&wcd->rx_chs[port_id].list,
 				      &wcd->dai[aif_id].slim_ch_list);
 		} else {
-			dev_err(wcd->dev ,"SLIM_RX%d PORT is busy\n", port_id);
-			return 0;
+			/*
+			 * Xiaomi Book 12.4 can pre-seed RX0/RX1 before userspace
+			 * selects the DAPM mux.  If the port is already attached
+			 * to the requested AIF, only update the mux state.
+			 */
+			list_for_each_entry(ch, &wcd->dai[aif_id].slim_ch_list, list) {
+				if (ch == &wcd->rx_chs[port_id]) {
+					found = true;
+					break;
+				}
+			}
+
+			if (!found) {
+				dev_err(wcd->dev ,"SLIM_RX%d PORT is busy\n", port_id);
+				return 0;
+			}
 		}
 		break;
 

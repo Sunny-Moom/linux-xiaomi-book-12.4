@@ -5,7 +5,6 @@
  * Copyright (c) 2024 bigsaltyfishes <bigsaltyfishes@gmail.com>
  */
 
-#include <linux/backlight.h>
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
 #include <linux/module.h>
@@ -18,8 +17,6 @@
 #include <drm/drm_modes.h>
 #include <drm/drm_panel.h>
 #include <drm/drm_probe_helper.h>
-
-#include <video/mipi_display.h>
 
 /* Manufacturer specific DSI commands */
 #define HX83121A_SETDISP 0xb2
@@ -34,9 +31,6 @@ struct hx83121a_panel {
 	struct drm_dsc_config dsc;
 	struct gpio_desc *reset_gpio;
 	struct gpio_desc *enable_gpio;
-	/* The panel has a DCS brightness register in addition to the PMIC WLED. */
-	struct backlight_device *dcs_backlight;
-	struct backlight_device *pmic_backlight;
 };
 
 static inline struct hx83121a_panel *to_hx83121a_panel(struct drm_panel *panel)
@@ -68,117 +62,46 @@ static void hx83121a_init_dsc(struct hx83121a_panel *ctx)
 	ctx->dsc.block_pred_enable = true;
 }
 
-static int csot_ppc357db1_4_dsc_init_seq(struct mipi_dsi_multi_context *dsi_ctx)
-{
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xb9, 0x83, 0x12, 0x1a, 0x55, 0x00);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xbd, 0x00);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, MIPI_DCS_WRITE_CONTROL_DISPLAY, 0x24);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xb1,
-				     0x1c, 0x6b, 0x6b, 0x27, 0xe7, 0x00, 0x1b, 0x25,
-				     0x21, 0x21, 0x2d, 0x2d, 0x17, 0x33, 0x31, 0x40,
-				     0xcd, 0xff, 0x1a, 0x05, 0x15, 0x98, 0x00, 0x88,
-				     0x7f, 0xff, 0xff, 0xcf, 0x1a, 0xcc, 0x02, 0x00);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xd1, 0x37, 0x03, 0x0c, 0xfd);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xb2,
-				     0x00, 0x6a, 0x40, 0x00, 0x00, 0x14, 0x98, 0x60,
-				     0x3c, 0x02, 0x80, 0x21, 0x21, 0x00, 0x00, 0xf0,
-				     0x27);
-	/*
-	 * NOTE: Register 0xE2 configuration (based on downstream reference):
-	 * - 0x00: 120Hz with DSC enabled
-	 * - 0x10: 60Hz with DSC enabled
-	 * - 0x20: 60Hz with DSC disabled
-	 *
-	 * Both 0x00 and 0x10 are compatible with 60Hz/120Hz when DSC is active.
-	 * We use a fixed DSC-on value to remain refresh-rate agnostic.
-	 */
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xe2, 0x00);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xc0, 0x23, 0x23, 0xcc, 0x22, 0x99, 0xd8);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xb4,
-				     0x46, 0x06, 0x0c, 0xbe, 0x0c, 0xbe, 0x09, 0x46,
-				     0x0f, 0x57, 0x0f, 0x57, 0x03, 0x4a, 0x00, 0x00,
-				     0x04, 0x0c, 0x00, 0x18, 0x01, 0x06, 0x08, 0x00,
-				     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-				     0x00, 0x00, 0xff, 0x00, 0xff, 0x10, 0x00, 0x02,
-				     0x14, 0x14, 0x14, 0x14);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xbd, 0x03);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xe1, 0x01, 0x3f);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xbd, 0x00);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xe9, 0xe2);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xe7, 0x49);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xe9, 0x3f);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xd3,
-				     0x00, 0xc0, 0x08, 0x08, 0x08, 0x04, 0x04, 0x04,
-				     0x16, 0x02, 0x07, 0x07, 0x07, 0x31, 0x13, 0x19,
-				     0x12, 0x12, 0x03, 0x03, 0x03, 0x32, 0x10, 0x18,
-				     0x00, 0x11, 0x32, 0x10, 0x03, 0x00, 0x03, 0x32,
-				     0x10, 0x03, 0x00, 0x03, 0x00, 0x00, 0xff, 0x00);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xe1,
-				     0x11, 0x00, 0x00, 0x89, 0x30, 0x80, 0x0a, 0x00,
-				     0x03, 0x20, 0x00, 0x14, 0x03, 0x20, 0x03, 0x20,
-				     0x02, 0x00, 0x02, 0x91, 0x00, 0x20, 0x02, 0x47,
-				     0x00, 0x0b, 0x00, 0x0c, 0x05, 0x0e, 0x03, 0x68,
-				     0x18, 0x00, 0x10, 0xe0, 0x03, 0x0c, 0x20, 0x00,
-				     0x06, 0x0b, 0x0b, 0x33, 0x0e, 0x1c, 0x2a, 0x38,
-				     0x46, 0x54, 0x62, 0x69, 0x70, 0x77, 0x79, 0x7b,
-				     0x7d, 0x7e, 0x01, 0x02, 0x01, 0x00, 0x09);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xe7,
-				     0x17, 0x08, 0x08, 0x2c, 0x46, 0x1e, 0x02, 0x23,
-				     0x5d, 0x02, 0xc9, 0x00, 0x00, 0x00, 0x00, 0x12,
-				     0x05, 0x02, 0x02, 0x07, 0x10, 0x10, 0x00, 0x1d,
-				     0xb9, 0x23, 0xb9, 0x00, 0x33, 0x02, 0x88);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xbd, 0x01);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xe7,
-				     0x02, 0x00, 0xb2, 0x01, 0x56, 0x07, 0x56, 0x08,
-				     0x48, 0x14, 0xfd, 0x26);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xbd, 0x02);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xe7,
-				     0x08, 0x08, 0x01, 0x03, 0x01, 0x03, 0x07, 0x02,
-				     0x02, 0x47, 0x00, 0x47, 0x81, 0x02, 0x40, 0x00,
-				     0x18, 0x4a, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01,
-				     0x00, 0x00, 0x03, 0x02, 0x01, 0x00, 0x00, 0x00,
-				     0x00, 0x00);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xbd, 0x00);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xbf,
-				     0xfd, 0x00, 0x80, 0x9c, 0x36, 0x00, 0x81, 0x0c);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xcd,
-				     0x81, 0x00, 0x80, 0x77, 0x00, 0x01, 0x00);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xbd, 0x01);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xe4,
-				     0xe1, 0xe1, 0xe1, 0xe1, 0xe1, 0xe1, 0xe1, 0xe1,
-				     0xc7, 0xb2, 0xa0, 0x90, 0x81, 0x75, 0x69, 0x5f,
-				     0x55, 0x4c, 0x44, 0x3d, 0x36, 0x2f, 0x2a, 0x24,
-				     0x1e, 0x19, 0x14, 0x10, 0x09, 0x08, 0x07, 0x54,
-				     0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xbd, 0x03);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xe4,
-				     0xaa, 0xd4, 0xff, 0x2a, 0x55, 0x7f, 0xaa, 0xd4,
-				     0xff, 0xea, 0xff, 0x03);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xbd, 0x00);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xbe, 0x01, 0x35, 0x00);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xd9, 0x5f);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, 0xb9, 0x00, 0x00, 0x00);
-
-	mipi_dsi_dcs_exit_sleep_mode_multi(dsi_ctx);
-	mipi_dsi_msleep(dsi_ctx, 140);
-	mipi_dsi_dcs_set_display_on_multi(dsi_ctx);
-
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, MIPI_DCS_WRITE_POWER_SAVE, 0x01);
-	mipi_dsi_dcs_write_seq_multi(dsi_ctx, MIPI_DCS_WRITE_CONTROL_DISPLAY, 0x24);
-	mipi_dsi_msleep(dsi_ctx, 20);
-
-	return dsi_ctx->accum_err;
-}
-
 static int hx83121a_on(struct hx83121a_panel *ctx)
 {
 	struct mipi_dsi_device *dsi = ctx->dsi;
+	struct device *dev = &dsi->dev;
 	struct mipi_dsi_multi_context dsi_ctx = { .dsi = dsi };
+	int ret;
 
 	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
 
-	/* The Xiaomi firmware configures this panel for DSC. */
-	return csot_ppc357db1_4_dsc_init_seq(&dsi_ctx);
+	ret = mipi_dsi_set_maximum_return_packet_size(dsi, 4);
+	if (ret < 0) {
+		dev_err(dev, "Failed to set maximum return packet size: %d\n", ret);
+		return ret;
+	}
+
+	/* PNC357DB1-4 init sequence from the ACPI GPU0 panel config. */
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, HX83121A_SETEXTC,
+				     0x83, 0x12, 0x1a, 0x55, 0x00);
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, HX83121A_SETBANK, 0x01);
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xcb,
+				     0x1f, 0x55, 0x03, 0x28, 0x0d, 0x08, 0x0a);
+	mipi_dsi_msleep(&dsi_ctx, 120);
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, HX83121A_SETBANK, 0x00);
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, HX83121A_UNKNOWN1,
+				     0x81, 0x00, 0x3d, 0x77, 0x18, 0x7a, 0x00);
+	mipi_dsi_dcs_exit_sleep_mode_multi(&dsi_ctx);
+	mipi_dsi_msleep(&dsi_ctx, 120);
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, HX83121A_SETDISP,
+				     0x00, 0x6a, 0x40, 0x00, 0x00, 0x14,
+				     0x6e, 0x40, 0x73, 0x02, 0x80, 0x21,
+				     0x21, 0x00, 0x00, 0xf0);
+
+	if (dsi_ctx.accum_err)
+		goto err;
+
+	return 0;
+
+err:
+	dev_err(dev, "DSI command sequence failed: %d\n", dsi_ctx.accum_err);
+	return dsi_ctx.accum_err;
 }
 
 static int hx83121a_display_on(struct hx83121a_panel *ctx)
@@ -233,15 +156,6 @@ static int hx83121a_prepare(struct drm_panel *panel)
 		return ret;
 	}
 
-	/* The PMIC WLED provides the LED rail; brightness itself is set over DSI. */
-	if (ctx->pmic_backlight) {
-		ret = backlight_enable(ctx->pmic_backlight);
-		if (ret < 0) {
-			regulator_bulk_disable(ARRAY_SIZE(ctx->supplies), ctx->supplies);
-			return ret;
-		}
-	}
-
 	if (ctx->enable_gpio)
 		gpiod_set_value_cansleep(ctx->enable_gpio, 1);
 
@@ -290,45 +204,7 @@ static int hx83121a_unprepare(struct drm_panel *panel)
 	if (ctx->enable_gpio)
 		gpiod_set_value_cansleep(ctx->enable_gpio, 0);
 	regulator_bulk_disable(ARRAY_SIZE(ctx->supplies), ctx->supplies);
-	if (ctx->pmic_backlight)
-		backlight_disable(ctx->pmic_backlight);
-
 	return 0;
-}
-
-static int hx83121a_bl_update_status(struct backlight_device *bl)
-{
-	struct hx83121a_panel *ctx = bl_get_data(bl);
-	u16 brightness = backlight_get_brightness(bl);
-	int ret;
-
-	/* PNC357DB1-4 accepts the standard 16-bit DCS brightness command. */
-	ret = mipi_dsi_dcs_set_display_brightness_large(ctx->dsi, brightness);
-	dev_info(&ctx->dsi->dev,
-		 "DCS brightness update: requested=%u power=%d mode_flags=0x%lx ret=%d\n",
-		 brightness, bl->props.power, ctx->dsi->mode_flags, ret);
-	return ret;
-}
-
-static const struct backlight_ops hx83121a_bl_ops = {
-	.options = BL_CORE_SUSPENDRESUME,
-	.update_status = hx83121a_bl_update_status,
-};
-
-static struct backlight_device *
-hx83121a_create_backlight(struct hx83121a_panel *ctx)
-{
-	struct backlight_properties props = {
-		.type = BACKLIGHT_RAW,
-		.brightness = 512,
-		.max_brightness = 4095,
-		.scale = BACKLIGHT_SCALE_NON_LINEAR,
-	};
-
-	return devm_backlight_device_register(&ctx->dsi->dev,
-					     "panel-dsi-backlight",
-					     &ctx->dsi->dev, ctx,
-					     &hx83121a_bl_ops, &props);
 }
 
 static const struct drm_display_mode hx83121a_mode = {
@@ -405,18 +281,6 @@ static int hx83121a_probe(struct mipi_dsi_device *dsi)
 	ret = drm_panel_of_backlight(&ctx->panel);
 	if (ret)
 		return ret;
-
-	/* Keep the PMIC WLED enabled as the LED power source, while exposing
-	 * the panel's DCS brightness control to DRM/KDE. */
-	ctx->pmic_backlight = ctx->panel.backlight;
-	ctx->dcs_backlight = hx83121a_create_backlight(ctx);
-	if (IS_ERR(ctx->dcs_backlight)) {
-		dev_err(dev, "failed to register DCS backlight: %ld\n",
-			PTR_ERR(ctx->dcs_backlight));
-		return PTR_ERR(ctx->dcs_backlight);
-	}
-	dev_info(dev, "registered DCS backlight\n");
-	ctx->panel.backlight = ctx->dcs_backlight;
 
 	drm_panel_add(&ctx->panel);
 

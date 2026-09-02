@@ -47,7 +47,9 @@
 			"MM_DL3", "MultiMedia3 Playback",
 			"MultiMedia2 Capture", "MM_UL2",
 			"SpkrLeft IN", "SPK1 OUT",
-			"SpkrRight IN", "SPK2 OUT";
+			"SpkrRight IN", "SPK2 OUT",
+			"Left Spk", "SPK1 OUT",
+			"Right Spk", "SPK2 OUT";
 
 		mm1-dai-link {
 			link-name = "MultiMedia1";

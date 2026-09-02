@@ -184,5 +184,12 @@ compile_commands.json
 # Documentation toolchain
 sphinx_*/
 
+# Local hardware extraction and out-of-tree experiment artifacts
+/*-module/
+/*.deb
+/*.dsl
+/dsdt.*
+/upstream-himax*
+
 # Rust analyzer configuration
 /rust-project.json
