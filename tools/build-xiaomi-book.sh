@@ -64,13 +64,14 @@ make -C "$kernel_root" O="$build_dir" ARCH=arm64 CROSS_COMPILE="$cross_prefix" d
     --module CONFIG_UHID \
     --module CONFIG_DRM_PANEL_HIMAX_HX83121A \
     --enable CONFIG_NF_TABLES \
-    --module CONFIG_NF_TABLES_INET \
-    --module CONFIG_NF_TABLES_IPV4 \
-    --module CONFIG_NF_TABLES_IPV6 \
+    --enable CONFIG_IPV6 \
+    --enable CONFIG_NF_TABLES_INET \
+    --enable CONFIG_NF_TABLES_IPV4 \
+    --enable CONFIG_NF_TABLES_IPV6 \
     --module CONFIG_NF_CONNTRACK \
     --module CONFIG_NF_NAT \
     --module CONFIG_NF_NAT_MASQUERADE \
-    --module CONFIG_NF_TABLES_NETDEV \
+    --enable CONFIG_NF_TABLES_NETDEV \
     --module CONFIG_NFT_CT \
     --module CONFIG_NFT_NAT \
     --module CONFIG_NFT_MASQ \
