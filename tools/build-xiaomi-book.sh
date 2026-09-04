@@ -70,7 +70,7 @@ make -C "$kernel_root" O="$build_dir" ARCH=arm64 CROSS_COMPILE="$cross_prefix" d
     --enable CONFIG_NF_TABLES_IPV6 \
     --module CONFIG_NF_CONNTRACK \
     --module CONFIG_NF_NAT \
-    --module CONFIG_NF_NAT_MASQUERADE \
+    --enable CONFIG_NF_NAT_MASQUERADE \
     --enable CONFIG_NF_TABLES_NETDEV \
     --module CONFIG_NFT_CT \
     --module CONFIG_NFT_NAT \
