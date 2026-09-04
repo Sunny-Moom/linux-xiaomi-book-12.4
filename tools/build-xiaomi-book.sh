@@ -63,6 +63,37 @@ make -C "$kernel_root" O="$build_dir" ARCH=arm64 CROSS_COMPILE="$cross_prefix" d
     --disable CONFIG_LOCALVERSION_AUTO \
     --module CONFIG_UHID \
     --module CONFIG_DRM_PANEL_HIMAX_HX83121A \
+    --enable CONFIG_NF_TABLES \
+    --module CONFIG_NF_TABLES_INET \
+    --module CONFIG_NF_TABLES_IPV4 \
+    --module CONFIG_NF_TABLES_IPV6 \
+    --module CONFIG_NF_CONNTRACK \
+    --module CONFIG_NF_NAT \
+    --module CONFIG_NF_NAT_MASQUERADE \
+    --module CONFIG_NF_TABLES_NETDEV \
+    --module CONFIG_NFT_CT \
+    --module CONFIG_NFT_NAT \
+    --module CONFIG_NFT_MASQ \
+    --module CONFIG_NFT_CHAIN_NAT \
+    --module CONFIG_NFT_REDIR \
+    --module CONFIG_NFT_FIB \
+    --module CONFIG_NFT_FIB_INET \
+    --module CONFIG_NFT_REJECT \
+    --module CONFIG_NFT_COMPAT \
+    --module CONFIG_IP_NF_FILTER \
+    --module CONFIG_IP_NF_NAT \
+    --module CONFIG_IP_NF_MANGLE \
+    --module CONFIG_IP_NF_RAW \
+    --module CONFIG_IP6_NF_FILTER \
+    --module CONFIG_IP6_NF_NAT \
+    --module CONFIG_IP6_NF_MANGLE \
+    --module CONFIG_IP6_NF_RAW \
+    --module CONFIG_NETFILTER_XT_TARGET_MASQUERADE \
+    --module CONFIG_NETFILTER_XT_TARGET_NETMAP \
+    --module CONFIG_NETFILTER_XT_TARGET_REDIRECT \
+    --module CONFIG_NETFILTER_XT_MATCH_ADDRTYPE \
+    --module CONFIG_NETFILTER_XT_MATCH_CONNTRACK \
+    --module CONFIG_NETFILTER_XT_MATCH_IPVS \
     --set-str CONFIG_LOCALVERSION "-xiaomi-book-${short_commit}"
 make -C "$kernel_root" O="$build_dir" ARCH=arm64 CROSS_COMPILE="$cross_prefix" olddefconfig
 make -C "$kernel_root" O="$build_dir" ARCH=arm64 CROSS_COMPILE="$cross_prefix" -j"$jobs" \
