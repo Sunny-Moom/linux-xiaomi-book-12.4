@@ -198,7 +198,7 @@ static int iris_load_fw_to_memory(struct iris_core *core, const char *fw_name)
 		goto err_release_fw;
 	}
 
-	dev_err(dev, "IRIS-TRACE: qcom_mdt_load (elf=%d) starting\n", fw_size);
+	dev_err(dev, "IRIS-TRACE: qcom_mdt_load (elf=%zd) starting\n", fw_size);
 
 	ret = qcom_mdt_load(dev, firmware, fw_name,
 			    pas_id, mem_virt, mem_phys, res_size, NULL);
