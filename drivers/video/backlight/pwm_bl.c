@@ -96,9 +96,9 @@ static int pwm_backlight_update_status(struct backlight_device *bl)
 	struct pwm_state state;
 
 	/* Keep the panel visibly on at the bottom of the user range. A real
-	 * blank/suspend request has non-zero bl->props.power and may turn it off. */
-	if (!brightness && pb->minimum_brightness &&
-	    bl->props.power == FB_BLANK_UNBLANK)
+	 * blank/suspend request is reported by backlight_is_blank() and may turn
+	 * the panel off. */
+	if (!brightness && pb->minimum_brightness && !backlight_is_blank(bl))
 		brightness = pb->minimum_brightness;
 
 	if (pb->notify)
