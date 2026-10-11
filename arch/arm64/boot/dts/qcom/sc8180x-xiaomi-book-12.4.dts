@@ -93,7 +93,9 @@
 			"DMIC1", "MIC BIAS1",
 			"DMIC1", "MCLK",
 			"SpkrLeft IN", "SPK1 OUT",
-			"SpkrRight IN", "SPK2 OUT";
+			"SpkrRight IN", "SPK2 OUT",
+			"Left Spk", "SPK1 OUT",
+			"Right Spk", "SPK2 OUT";
 
 		mm1-dai-link {
 			link-name = "MultiMedia1";

@@ -269,9 +269,6 @@ sudo systemctl disable --now tqftpserv.service rmtfs.service
   旋转支持，并在所有 GRUB 启动项加入 `fbcon=rotate:1`。
 * **2026-08-31**：启用 SC8180X PMIC PON 电源键（`pmc8180_pwrkey`），使实体电源键
   注册为 `KEY_POWER` 并具备挂起唤醒资格；此前该节点在基线设备树中被禁用。
-* **2026-08-31**：清理未生效的 systemd 背光睡眠钩子；Wayland KDE 的亮度由 KWin/PowerDevil
-  管理，修正 `kwinoutputconfig.json` 中将软件亮度锁定为 `0.005` 的旧配置，并允许 SDR
-  软件亮度控制。重新登录 KDE 后亮度滑块才会加载该设置。
 * **2026-08-31**：修正 SDDM Xorg 登录界面的触控坐标，新增
   `40-xiaomi-touchscreen.conf`，将触控矩阵与 `xrandr --rotate right` 同步；该配置不影响
   KDE Wayland 会话。
