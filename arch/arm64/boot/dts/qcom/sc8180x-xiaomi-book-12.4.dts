@@ -400,7 +400,6 @@
 		enable-active-high;
 
 		regulator-boot-on;
-		status = "disabled";
 	};
 
 	usbprim-sbu-mux {
@@ -675,7 +674,7 @@
 	pinctrl-0 = <&i2c7_active>;
 	pinctrl-names = "default";
 
-	status = "disabled";
+	status = "okay";
 
 	/*
 	 * Renesas RA9530 stylus charger (ACPI Device (SXB), _HID "TXRA9530").
@@ -806,6 +805,8 @@
 	perst-gpios = <&tlmm 102 GPIO_ACTIVE_LOW>;
 
 	//wake-gpios = <&tlmm 104 GPIO_ACTIVE_HIGH>;
+
+	vddpe-3v3-supply = <&vreg_nvme_3p3>;
 
 	num-lanes = <2>;
 
