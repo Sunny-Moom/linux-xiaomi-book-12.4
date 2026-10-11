@@ -12,6 +12,7 @@
 #include <linux/of_address.h>
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
+#include <linux/spmi.h>
 
 /* From DT binding */
 #define WLED_MAX_STRINGS				4
@@ -202,6 +203,7 @@ struct wled {
 
 	struct wled_config cfg;
 	struct delayed_work ovp_work;
+	struct delayed_work scan_work;
 
 	/* Configures the brightness. Applicable for wled3, wled4 and wled5 */
 	int (*wled_set_brightness)(struct wled *wled, u16 brightness);
@@ -227,6 +229,47 @@ struct wled {
 	 */
 	bool (*wled_auto_detection_required)(struct wled *wled);
 };
+
+struct wled5_scan_ctx {
+	struct spmi_device *sdev[16];
+	unsigned int count;
+};
+
+static int wled5_collect_spmi(struct device *dev, void *data)
+{
+	struct wled5_scan_ctx *ctx = data;
+
+	if (ctx->count < ARRAY_SIZE(ctx->sdev)) {
+		ctx->sdev[ctx->count++] = to_spmi_device(get_device(dev));
+	}
+	return 0;
+}
+
+static void wled5_scan_workfn(struct work_struct *work)
+{
+	struct wled *wled = container_of(to_delayed_work(work), struct wled,
+					 scan_work);
+	struct wled5_scan_ctx ctx = { };
+	unsigned int i;
+	u16 base;
+	u8 buf[2];
+	int rc;
+
+	/* Collect references first; SPMI transactions happen after bus iteration. */
+	bus_for_each_dev(wled->dev->parent->bus, NULL, &ctx,
+			 wled5_collect_spmi);
+	for (i = 0; i < ctx.count; i++) {
+		for (base = 0; base < 0x10000; base += 0x100) {
+			rc = spmi_ext_register_readl(ctx.sdev[i], base + 0x04,
+						     buf, sizeof(buf));
+			if (rc == 0 && (buf[0] || buf[1]))
+				dev_info(wled->dev,
+					 "SPMI scan sid=%u peripheral=%#x type=%#x subtype=%#x\n",
+					 ctx.sdev[i]->usid, base, buf[0], buf[1]);
+		}
+		put_device(&ctx.sdev[i]->dev);
+	}
+}
 
 static int wled3_set_brightness(struct wled *wled, u16 brightness)
 {
@@ -288,6 +331,63 @@ static int wled5_set_brightness(struct wled *wled, u16 brightness)
 	rc = regmap_bulk_write(wled->regmap, wled->sink_addr + offset,
 			       &v, sizeof(v));
 	return rc;
+}
+
+/* Read back the WLED5 state so a successful regmap transaction can be
+ * distinguished from a hardware path that is not actually driving the panel.
+ * This is intentionally diagnostic only; it does not change any registers.
+ */
+static void wled5_debug_state(struct wled *wled, const char *where)
+{
+	u32 type, subtype, mod_en, mod_src, width, bright_lsb, bright_msb, sync, sink_en;
+	int rc;
+
+	rc = regmap_read(wled->regmap, wled->ctrl_addr + 0x04, &type);
+	if (rc < 0)
+		type = 0xffffffff;
+	rc = regmap_read(wled->regmap, wled->ctrl_addr + 0x05, &subtype);
+	if (rc < 0)
+		subtype = 0xffffffff;
+	rc = regmap_read(wled->regmap, wled->ctrl_addr + WLED3_CTRL_REG_MOD_EN,
+			 &mod_en);
+	if (rc < 0)
+		mod_en = 0xffffffff;
+	rc = regmap_read(wled->regmap, wled->sink_addr +
+			 ((wled->cfg.mod_sel == MOD_A) ?
+			  WLED5_SINK_REG_MOD_A_SRC_SEL : WLED5_SINK_REG_MOD_B_SRC_SEL),
+			 &mod_src);
+	if (rc < 0)
+		mod_src = 0xffffffff;
+	rc = regmap_read(wled->regmap, wled->sink_addr +
+			 ((wled->cfg.mod_sel == MOD_A) ?
+			  WLED5_SINK_REG_MOD_A_BRIGHTNESS_WIDTH_SEL :
+			  WLED5_SINK_REG_MOD_B_BRIGHTNESS_WIDTH_SEL), &width);
+	if (rc < 0)
+		width = 0xffffffff;
+	rc = regmap_read(wled->regmap, wled->sink_addr +
+			 ((wled->cfg.mod_sel == MOD_A) ?
+			  WLED5_SINK_REG_MOD_A_BRIGHTNESS_LSB :
+			  WLED5_SINK_REG_MOD_B_BRIGHTNESS_LSB), &bright_lsb);
+	if (rc < 0)
+		bright_lsb = 0xffffffff;
+	rc = regmap_read(wled->regmap, wled->sink_addr +
+			 ((wled->cfg.mod_sel == MOD_A) ?
+			  WLED5_SINK_REG_MOD_A_BRIGHTNESS_MSB :
+			  WLED5_SINK_REG_MOD_B_BRIGHTNESS_MSB), &bright_msb);
+	if (rc < 0)
+		bright_msb = 0xffffffff;
+	rc = regmap_read(wled->regmap, wled->sink_addr +
+			 WLED5_SINK_REG_MOD_SYNC_BIT, &sync);
+	if (rc < 0)
+		sync = 0xffffffff;
+	rc = regmap_read(wled->regmap, wled->sink_addr +
+			 WLED4_SINK_REG_CURR_SINK, &sink_en);
+	if (rc < 0)
+		sink_en = 0xffffffff;
+
+	dev_info(wled->dev,
+		 "state %s type=%#x subtype=%#x mod_en=%#x src=%#x width=%#x bright=%#x/%#x sync=%#x sink=%#x\n",
+		 where, type, subtype, mod_en, mod_src, width, bright_msb, bright_lsb, sync, sink_en);
 }
 
 static void wled_ovp_work(struct work_struct *work)
@@ -435,6 +535,9 @@ static int wled_update_status(struct backlight_device *bl)
 	u16 brightness = backlight_get_brightness(bl);
 	int rc = 0;
 
+	dev_info(wled->dev, "brightness request=%u max=%u current=%u\n",
+		 brightness, wled->max_brightness, wled->brightness);
+
 	mutex_lock(&wled->lock);
 	if (brightness) {
 		rc = wled->wled_set_brightness(wled, brightness);
@@ -473,6 +576,9 @@ static int wled_update_status(struct backlight_device *bl)
 	}
 
 	wled->brightness = brightness;
+	dev_info(wled->dev, "brightness applied=%u rc=%d\n", brightness, rc);
+	if (wled->version == 5)
+		wled5_debug_state(wled, "update");
 
 unlock_mutex:
 	mutex_unlock(&wled->lock);
@@ -1697,6 +1803,14 @@ static int wled_probe(struct platform_device *pdev)
 	val = WLED3_SINK_REG_BRIGHT_MAX;
 	of_property_read_u32(pdev->dev.of_node, "max-brightness", &val);
 	wled->max_brightness = val;
+	dev_info(&pdev->dev,
+		 "config version=%u ctrl=0x%x sink=0x%x strings=%u "
+		 "enabled=%u,%u,%u,%u mod=%u cabc=%u max=%u\n",
+		 wled->version, wled->ctrl_addr, wled->sink_addr,
+		 wled->cfg.num_strings, wled->cfg.enabled_strings[0],
+		 wled->cfg.enabled_strings[1], wled->cfg.enabled_strings[2],
+		 wled->cfg.enabled_strings[3], wled->cfg.mod_sel,
+		 wled->cfg.cabc, wled->max_brightness);
 
 	switch (wled->version) {
 	case 3:
@@ -1727,6 +1841,9 @@ static int wled_probe(struct platform_device *pdev)
 			dev_err(&pdev->dev, "wled5_setup failed\n");
 			return rc;
 		}
+		wled5_debug_state(wled, "probe");
+		INIT_DELAYED_WORK(&wled->scan_work, wled5_scan_workfn);
+		schedule_delayed_work(&wled->scan_work, 5 * HZ);
 		break;
 
 	default:
@@ -1763,6 +1880,7 @@ static void wled_remove(struct platform_device *pdev)
 
 	mutex_destroy(&wled->lock);
 	cancel_delayed_work_sync(&wled->ovp_work);
+	cancel_delayed_work_sync(&wled->scan_work);
 	disable_irq(wled->short_irq);
 	disable_irq(wled->ovp_irq);
 }

@@ -75,6 +75,7 @@ config QCOM_OCMEM
 config QCOM_PD_MAPPER
 	tristate "Qualcomm Protection Domain Mapper"
 	select QCOM_QMI_HELPERS
+	select QCOM_PDR_HELPERS
 	select QCOM_PDR_MSG
 	select AUXILIARY_BUS
 	depends on NET && QRTR && (ARCH_QCOM || COMPILE_TEST)
@@ -93,6 +94,31 @@ config QCOM_PDR_HELPERS
 
 config QCOM_PDR_MSG
 	tristate
+
+config QCOM_TQFTPSERV
+	tristate "Qualcomm in-kernel TFTP-over-QRTR server"
+	depends on NET && QRTR
+	select FW_LOADER
+	help
+	  In-kernel reimplementation of the userspace tqftpserv daemon. It
+	  publishes QRTR service 4096 and serves peripheral firmware images
+	  (e.g. wlanmdsp.mbn) to the modem over TFTP-over-QRTR using the kernel
+	  firmware loader. This is needed to bring up the WCN3990 wlan
+	  protection domain on systems where the proprietary Qualcomm userspace
+	  is not present. Firmware writes are kept in a bounded RAM-only store;
+	  no persistent storage is accessed.
+
+config QCOM_RMTFS_SERV
+	tristate "Qualcomm in-kernel RMTFS QMI server"
+	depends on ARCH_QCOM && NET && QRTR
+	depends on QCOM_RMTFS_MEM
+	select QCOM_QMI_HELPERS
+	help
+	  In-kernel, RAM-only implementation of the Qualcomm RMTFS QMI service.
+	  This is intended for Qualcomm laptops without modemst/fsc/fsg GPT
+	  partitions; it provides the modem's EFS protocol without accessing
+	  persistent storage. Do not enable this together with the userspace
+	  rmtfs daemon, which would register the same QRTR service.
 
 config QCOM_PMIC_PDCHARGER_ULOG
 	tristate "Qualcomm PMIC PDCharger ULOG driver"

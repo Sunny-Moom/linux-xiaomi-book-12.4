@@ -1722,6 +1722,16 @@ static int qcom_battmgr_probe(struct auxiliary_device *adev,
 
 	pmic_glink_client_register(battmgr->client);
 
+	/*
+	 * Some SC8180X firmware images do not publish charger_pd through PDR,
+	 * although the PMIC GLINK request/response endpoint is functional.  In
+	 * that case PDR leaves service_up false forever and every property read
+	 * returns -EAGAIN.  Allow the endpoint to be used; pmic_glink_send() still
+	 * reports -ECONNRESET while the transport is unavailable.
+	 */
+	if (battmgr->variant == QCOM_BATTMGR_SC8280XP)
+		battmgr->service_up = true;
+
 	return 0;
 }
 
