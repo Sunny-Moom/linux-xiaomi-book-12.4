@@ -1237,14 +1237,16 @@ static void qcom_battmgr_sc8280xp_strcpy(char *dest, const char *src)
 
 static unsigned int qcom_battmgr_sc8280xp_parse_technology(const char *chemistry)
 {
-	if ((!strncmp(chemistry, "LIO", BATTMGR_CHEMISTRY_LEN)) ||
-	    (!strncmp(chemistry, "OOI", BATTMGR_CHEMISTRY_LEN)))
+	if ((!strncmp(chemistry, "LIO", 3)) ||
+	    (!strncmp(chemistry, "OOI", 3)) ||
+	    (!strncmp(chemistry, "Lion", BATTMGR_CHEMISTRY_LEN)))
 		return POWER_SUPPLY_TECHNOLOGY_LION;
-	if (!strncmp(chemistry, "LIP", BATTMGR_CHEMISTRY_LEN) ||
-	    !strncmp(chemistry, "LiP", BATTMGR_CHEMISTRY_LEN))
+	if (!strncmp(chemistry, "LIP", 3) ||
+	    !strncmp(chemistry, "LiP", 3))
 		return POWER_SUPPLY_TECHNOLOGY_LIPO;
 
-	pr_err("Unknown battery technology '%s'\n", chemistry);
+	pr_err("Unknown battery technology '%.*s'\n",
+	       BATTMGR_CHEMISTRY_LEN, chemistry);
 	return POWER_SUPPLY_TECHNOLOGY_UNKNOWN;
 }
 
