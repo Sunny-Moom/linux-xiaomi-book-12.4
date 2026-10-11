@@ -291,6 +291,7 @@
 		compatible = "pwm-backlight";
 
 		pwms = <&pmc8180c_lpg 4 53230>;
+		qcom,min-brightness = <40>;
 	};
 
 	pmic-glink {
@@ -1328,6 +1329,8 @@
 
 &wifi {
 	memory-region = <&wlan_mem>;
+	/* WCN3990 firmware on this SC8180X accepts an 8-bit host-cap request. */
+	qcom,snoc-host-cap-8bit-quirk;
 
 	vdd-0.8-cx-mx-supply = <&vreg_l1e_0p75>;
 	vdd-1.8-xo-supply = <&vreg_l7a_1p8>;
