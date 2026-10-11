@@ -58,7 +58,7 @@
 #define WCD934X_MCLK_CLK_12P288MHZ	12288000
 #define WCD934X_MCLK_CLK_9P6MHZ		9600000
 
-static bool wcd934x_trace_xiaomi_book(void)
+static bool wcd934x_is_xiaomi_book_12_4(void)
 {
 	return of_machine_is_compatible("xiaomi,book-12.4");
 }
@@ -1705,7 +1705,13 @@ static int wcd934x_slim_set_hw_params(struct wcd934x_codec *wcd,
 	u16 payload = 0;
 	int ret, i;
 
-	if (wcd934x_trace_xiaomi_book() &&
+	/*
+	 * The Xiaomi Book 12.4 has no UCM profile yet, so nothing ever sets
+	 * the SLIM_RX DAPM muxes.  Seed the first two WCD934x RX ports with
+	 * their standard channel numbers so playback can still be streamed
+	 * to the speaker amplifiers.
+	 */
+	if (wcd934x_is_xiaomi_book_12_4() &&
 	    direction == SNDRV_PCM_STREAM_PLAYBACK &&
 	    dai_data == &wcd->dai[AIF1_PB] &&
 	    list_empty(slim_ch_list)) {
@@ -1903,7 +1909,7 @@ static int wcd934x_trigger(struct snd_pcm_substream *substream, int cmd,
 	struct wcd_slim_codec_dai_data *dai_data;
 	struct wcd934x_codec *wcd;
 	struct slim_stream_config *cfg;
-	bool xiaomi = wcd934x_trace_xiaomi_book();
+	bool xiaomi = wcd934x_is_xiaomi_book_12_4();
 	int ret, ret2;
 
 	wcd = snd_soc_component_get_drvdata(dai->component);

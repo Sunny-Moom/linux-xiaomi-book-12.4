@@ -49,6 +49,8 @@ extern struct iris_platform_data sm8750_data;
 
 enum platform_clk_type {
 	IRIS_AXI_CLK, /* AXI0 in case of platforms with multiple AXI clocks */
+	IRIS_AXIC_CLK, /* AXI config port (SC8180X) */
+	IRIS_AHB_CLK, /* register/AHB interface clock (SC8180X) */
 	IRIS_CTRL_CLK,
 	IRIS_HW_CLK,
 	IRIS_AXI1_CLK,

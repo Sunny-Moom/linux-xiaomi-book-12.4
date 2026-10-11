@@ -246,7 +246,10 @@ static struct platform_inst_caps platform_inst_cap_sm8250 = {
 
 static void iris_set_sm8250_preset_registers(struct iris_core *core)
 {
-	writel(0x0, core->reg_base + 0xB0088);
+	/* 0xB0088 is a Venus 6xx register (WRAPPER_CORE_POWER_STATUS_V6 + 8);
+	 * the older map has no equivalent, so skip it for this test.
+	 */
+	dev_err(core->dev, "IRIS-TRACE: preset regs skipped (Venus 4xx map)\n");
 }
 
 static const struct icc_info sm8250_icc_table[] = {
@@ -269,6 +272,9 @@ static const char * const sm8250_opp_pd_table[] = { "mx" };
 
 static const struct platform_clk_data sm8250_clk_table[] = {
 	{IRIS_AXI_CLK,  "iface"        },
+	{IRIS_AXIC_CLK, "axic"         },
+	{IRIS_AXI1_CLK, "axi1"         },
+	{IRIS_AHB_CLK,  "ahb"          },
 	{IRIS_CTRL_CLK, "core"         },
 	{IRIS_HW_CLK,   "vcodec0_core" },
 };

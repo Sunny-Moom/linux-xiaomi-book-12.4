@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause
 /*
+ * Xiaomi Book S 12.4 (SC8180X / SC8180XP).
+ *
  * Based on:
- % - sc8180x-primus.dts
- % - sc8180x-lenovo-flex-5g.dts
+ *  - sc8180x-primus.dts
+ *  - sc8180x-lenovo-flex-5g.dts
  */
 
 /dts-v1/;
@@ -22,22 +24,13 @@
 	model = "Xiaomi Book 12.4";
 	compatible = "xiaomi,book-12.4", "qcom,sc8180x";
 
-	/* Windows configures the panel through PMIC LPG PWM channel 4.
-	 * The firmware leaves this channel at an ~1.17 kHz period; use that
-	 * period here and let pwm-backlight scale the duty cycle. */
-	backlight: backlight {
-		compatible = "pwm-backlight";
-		pwms = <&pmc8180c_lpg 4 851667>;
-		qcom,min-brightness = <40>;
-	};
-
 	aliases {
 		serial0 = &uart13;
 	};
 
-	sound {
-		compatible = "qcom,sdm845-sndcard";
-		model = "Xiaomi-Book-12.4";
+	sound: sound {
+		compatible = "xiaomi,book-12.4-sndcard", "qcom,sdm845-sndcard";
+		model = "Xiaomi Book 12.4";
 		status = "okay";
 
 		audio-routing =
@@ -157,6 +150,75 @@
 			wakeup-source;
 			wakeup-event-action = <EV_ACT_DEASSERTED>;
 		};
+	};
+
+	/*
+	 * Volume keys.  The vendor device tree does not describe them at all, and
+	 * Linux has no driver for the Windows description either: they live in the
+	 * ACPI Generic Buttons device (\_SB.BTNS, _HID ACPI0011) as GpioInt
+	 * resources on \_SB.PM01, the aggregate PMIC controller:
+	 *
+	 *     pin 0x0000  ActiveBoth, ExclusiveAndWake, PullDown -> usage page 1, 0x81  = KPDPWR
+	 *     pin 0x0001  ActiveBoth, Exclusive,        PullDown -> page 0x0c, 0xea   = Volume Down
+	 *     pin 0x0085  ActiveBoth, Exclusive,        PullUp   -> page 0x0c, 0xe9   = Volume Up
+	 *
+	 * (the _DSD UUID is fa6bd625-9ce8-470d-a2c7-b3ca36c4282e).  PM01 mixes two
+	 * number spaces: plain PMIC interrupts appear under 0x80 (the ADC/BCL
+	 * entries in both this machine's and the Surface Pro X's dump are like
+	 * that), while the PMIC GPIOs are 0x7f + gpio - the Surface Pro X button
+	 * device (\_SB.MSBT, MSHW0040) declares the same 0x00/0x80/0x85 triple and
+	 * its Linux port drives the volume keys from the first PMIC's GPIO 1 and
+	 * GPIO 6, which is exactly 0x80 and 0x85.
+	 *
+	 * So on this machine:
+	 *   0x0000 = PON KPDPWR  -> the power key, enabled below as pmc8180_pwrkey
+	 *   0x0001 = PON RESIN   -> volume down, enabled below as pmc8180_resin
+	 *   0x0085 = GPIO 6      -> volume up (verified on hardware)
+	 */
+	volume-up-6-keys {
+		compatible = "gpio-keys";
+		label = "Volume Up (pmc8180_1 gpio6)";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&volume_up_6_default_state>;
+
+		volume-up-6 {
+			label = "Volume Up";
+			gpios = <&pmc8180_1_gpios 6 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_VOLUMEUP>;
+		};
+	};
+
+	volume-up-5-keys {
+		compatible = "gpio-keys";
+		label = "Volume Up (pmc8180_1 gpio5)";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&volume_up_5_default_state>;
+
+		volume-up-5 {
+			label = "Volume Up";
+			gpios = <&pmc8180_1_gpios 5 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_VOLUMEUP>;
+		};
+	};
+
+	/*
+	 * Panel backlight: LPG channel 5 on the PMC8180C (register base 0xbd00,
+	 * PWM channel index 4).  The bootloader leaves it running at ~1.17 kHz,
+	 * 256 of 511 duty; nothing in Linux used to touch it, which is why the
+	 * brightness never changed.  Lowering/raising this duty clearly dims and
+	 * brightens the panel, while the PMC8180C WLED block the panel used to
+	 * point at reads back as all zeroes and controls nothing.
+	 *
+	 * No brightness-levels table on purpose: pwm-backlight then uses its
+	 * CIE1931 curve with 4096 levels, which is a sane slider response.
+	 */
+	backlight: backlight {
+		compatible = "pwm-backlight";
+
+		pwms = <&pmc8180c_lpg 4 851667>;
+		qcom,min-brightness = <40>;
 	};
 
 	pmic-glink {
@@ -285,6 +347,11 @@
 
 		cdsp_mem: cdsp-region@92400000 {
 			reg = <0x0 0x92400000 0x0 0x800000>;
+			no-map;
+		};
+
+		slpi_mem: slpi-region@92c00000 {
+			reg = <0x0 0x92c00000 0x0 0x1400000>;
 			no-map;
 		};
 
@@ -569,11 +636,12 @@
 };
 
 /*
- * Windows exposes the touchscreen bus as I2C2, but its MMIO base is
+ * Windows exposes the touchscreen bus as \_SB.I2C2, but its MMIO base is
  * 0x00884000, which maps to Linux's &i2c1 / QUP0 SE1.
  */
 &i2c1 {
 	clock-frequency = <400000>;
+
 	pinctrl-0 = <&i2c1_active>;
 	pinctrl-names = "default";
 	status = "okay";
@@ -581,73 +649,82 @@
 	touchscreen@4f {
 		compatible = "hid-over-i2c";
 		reg = <0x4f>;
-		hid-descr-addr = <0x1>;
 
+		hid-descr-addr = <0x1>;
 		vdd-supply = <&vreg_l4c_3p3>;
 		vddl-supply = <&vreg_l12e_1p8>;
 		post-power-on-delay-ms = <200>;
 
 		interrupts-extended = <&tlmm 122 IRQ_TYPE_LEVEL_LOW>;
 
-		pinctrl-names = "default";
 		pinctrl-0 = <&ts_irq_active>;
+		pinctrl-names = "default";
+
 	};
 };
 
 &i2c7 {
-	clock-frequency = <1000000>;
+	/*
+	 * The platform firmware declares 400 kHz for this bus (the ACPI
+	 * descriptor uses 0x00061A80).  1 MHz makes it marginal: broad
+	 * i2cdetect sweeps on the charger below produce "Bus arbitration
+	 * lost, clock line undriveable".
+	 */
+	clock-frequency = <400000>;
 
 	pinctrl-0 = <&i2c7_active>;
 	pinctrl-names = "default";
 
 	status = "disabled";
 
-    // Charger
-    // Device (SXB), Method _CRS
-    // No driver is provided for this device currently
-    /*
-    txra9530@3b {
-        compatible = "wingtech,txra9530";
-        reg = <0x3b>;
+	/*
+	 * Renesas RA9530 stylus charger (ACPI Device (SXB), _HID "TXRA9530").
+	 *
+	 * No pinctrl-0 is needed: the firmware already leaves all five pins
+	 * muxed as plain GPIOs with the right bias and drive settings, and the
+	 * driver takes them over through gpiod.
+	 */
+	pen_charger: charger@3b {
+		compatible = "renesas,ra9530";
+		reg = <0x3b>;
 
-        interrupt-parent = <&tlmm>;
-        interrupts-extended = <&tlmm 101 IRQ_TYPE_LEVEL_LOW>,
-                             <&tlmm 189 IRQ_TYPE_EDGE_LOW>,
-                             <&tlmm 97 IRQ_TYPE_EDGE_LOW>;
+		/* external switch and 7 V boost; firmware leaves both on */
+		switch-gpios = <&tlmm 11 GPIO_ACTIVE_HIGH>;
+		boost-gpios = <&tlmm 186 GPIO_ACTIVE_HIGH>;
 
-        gpios = <&tlmm 11 GPIO_ACTIVE_LOW>,
-                <&tlmm 186 GPIO_ACTIVE_LOW>;
+		/*
+		 * Two hall sensors; the stylus is attached while they differ.
+		 * Measured on this board: gpio97 is low with the pen attached,
+		 * gpio189 stays high.
+		 */
+		pen-detect-gpios = <&tlmm 97 GPIO_ACTIVE_LOW>,
+				   <&tlmm 189 GPIO_ACTIVE_LOW>;
 
-        pinctrl-0 = <&txra9530_int_default>;
-        pinctrl-names = "default";
+		/* chip interrupt, open drain, active low */
+		interrupt-parent = <&tlmm>;
+		interrupts = <101 IRQ_TYPE_EDGE_FALLING>;
 
-        status = "okay";
-    };
-    */
+		renesas,fod-mw = <500>;
+	};
 };
 
-/* The physical power button is wired to the PMIC PON block. */
-&pmc8180_pwrkey {
-	status = "okay";
-};
+/*
+ * Windows also describes an audio companion (\_SB.ADSP.SLM1.ADCM.AUDD) on
+ * SPI4/CS0 with MBHC and audio-adapter children.  Its interrupt is delivered
+ * through the qcgpio/PDC event space instead of a plain TLMM GPIO, so it is
+ * left undescribed for now.  Speakers and headset are handled by the WCD9340
+ * on SLIMbus.
+ */
 
-// From PNC357DB1.xml
-// FIXME: Due to PEP0 defination, device is using PMIC-WLED
-// 		  backlight, need to confirm the configuration.
-// FIXME: The units may be wrong. Need to be verified
+/*
+ * The Windows panel XML (PNC357DB1.xml) says the backlight is PMIC-side, and
+ * that is right - but it is the LPG PWM, not the WLED.  This WLED block reads
+ * back as all zeroes, disabling its module does not turn the panel off, and no
+ * register in it changes with the backlight value, so it is not wired to the
+ * panel's LEDs on this board.  Keep it disabled: it only registers a second,
+ * useless "backlight" device that competes with the pwm-backlight one.
+ */
 &pmc8180c_wled {
-	label = "backlight-wled";
-    // From PNC357DB1-4 Datasheet:
-    // LED Light Bar Power Supply Current: {
-    //     "Symbol": "LED_K(1-8)",
-    //     "Value": { "Typ": 140 },
-    //     "Unit": "mA"
-    // }
-    qcom,num-strings = <2>;
-    qcom,current-limit-microamp = <17500>;
-	qcom,modulator-sel = <1>;
-	max-brightness = <511>;
-
 	status = "disabled";
 };
 
@@ -667,7 +744,10 @@
 		vdd1-supply = <&vreg_l1c_1p8>;
 		vdd-supply = <&vreg_l12a_1p8>;
 
-		backlight = <&backlight>;
+		/*
+		 * No backlight phandle: the panel is dimmed by the LPG PWM
+		 * (see the backlight node above), not by a PMIC WLED.
+		 */
 		reset-gpios = <&tlmm 116 GPIO_ACTIVE_LOW>;
 		enable-gpios = <&tlmm 6 GPIO_ACTIVE_HIGH>;
 
@@ -773,11 +853,11 @@
 &remoteproc_adsp_glink {
 	apr {
 		compatible = "qcom,apr-v2";
-		qcom,glink-channels = "apr_audio_svc";
 		qcom,domain = <APR_DOMAIN_ADSP>;
+		qcom,glink-channels = "apr_audio_svc";
+		qcom,intents = <512 20>;
 		#address-cells = <1>;
 		#size-cells = <0>;
-		qcom,intents = <512 20>;
 		status = "okay";
 
 		service@3 {
@@ -806,10 +886,10 @@
 
 			q6asmdai: dais {
 				compatible = "qcom,q6asm-dais";
+				iommus = <&apps_smmu 0x1b21 0x0>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 				#sound-dai-cells = <1>;
-				iommus = <&apps_smmu 0x1b21 0x0>;
 
 				dai@0 {
 					reg = <MSM_FRONTEND_DAI_MULTIMEDIA1>;
@@ -848,6 +928,18 @@
 	status = "disabled";
 };
 
+/*
+ * SLPI / SPSS.  This is where the Qualcomm Sensor Core runs, so it is what
+ * makes the accelerometer (and auto-rotate) available: with it up, the SSC's
+ * QMI service appears on QRTR and libssc + iio-sensor-proxy can drive it.
+ */
+&remoteproc_slpi {
+	memory-region = <&slpi_mem>;
+	firmware-name = "qcom/XIAOMI/BOOK124/qcslpi8180.mbn";
+
+	status = "okay";
+};
+
 &remoteproc_mpss {
 	memory-region = <&mpss_mem>;
 	firmware-name = "qcom/XIAOMI/BOOK124/qcmpss8180_nm.mbn";
@@ -859,13 +951,13 @@
 &soc {
 	slimbam: dma-controller@17184000 {
 		compatible = "qcom,bam-v1.7.4", "qcom,bam-v1.7.0";
-		qcom,controlled-remotely;
-		reg = <0x0 0x17184000 0x0 0x32000>;
-		num-channels = <23>;
+		reg = <0x0 0x17184000 0x0 0x2a000>;
 		interrupts = <GIC_SPI 164 IRQ_TYPE_LEVEL_HIGH>;
 		#dma-cells = <1>;
+		qcom,controlled-remotely;
 		qcom,ee = <1>;
 		qcom,num-ees = <4>;
+		num-channels = <23>;
 		iommus = <&apps_smmu 0x1b46 0x0>;
 		status = "okay";
 	};
@@ -897,36 +989,38 @@
 				slim-ifc-dev = <&wcd9340_ifd>;
 
 				#sound-dai-cells = <1>;
+
 				interrupts-extended = <&tlmm 123 IRQ_TYPE_LEVEL_HIGH>;
 				interrupt-controller;
 				#interrupt-cells = <1>;
 
-				reset-gpios = <&tlmm 143 GPIO_ACTIVE_HIGH>;
 				clock-names = "extclk";
 				clocks = <&rpmhcc RPMH_LN_BB_CLK2>;
+
 				#clock-cells = <0>;
 				clock-frequency = <9600000>;
 				clock-output-names = "mclk";
 
-				vdd-buck-supply = <&vreg_s4a_1p8>;
+				pinctrl-0 = <&wcd_intr_default>, <&wcd_reset_default>;
+				pinctrl-names = "default";
+
+				reset-gpios = <&tlmm 143 GPIO_ACTIVE_HIGH>;
+
 				vdd-buck-sido-supply = <&vreg_s4a_1p8>;
+				vdd-buck-supply = <&vreg_s4a_1p8>;
 				vdd-tx-supply = <&vreg_s4a_1p8>;
 				vdd-rx-supply = <&vreg_s4a_1p8>;
 				vdd-io-supply = <&vreg_s4a_1p8>;
 
-				pinctrl-0 = <&wcd_intr_default>;
-				pinctrl-names = "default";
 				qcom,micbias1-microvolt = <1800000>;
-				qcom,micbias2-microvolt = <1800000>;
-				qcom,micbias3-microvolt = <1800000>;
+				qcom,micbias2-microvolt = <2850000>;
+				qcom,micbias3-microvolt = <2850000>;
 				qcom,micbias4-microvolt = <1800000>;
 				/* WCD934x MBHC thresholds (same electrical front-end as
 				 * Qualcomm SC8280XP/SDM845 reference designs).  Without
 				 * these properties the driver falls back to 500 mV button
 				 * thresholds and can misclassify a stereo plug as mono. */
-				qcom,mbhc-buttons-vthreshold-microvolt =
-					<75000 150000 237000 500000
-					 500000 500000 500000 500000>;
+				qcom,mbhc-buttons-vthreshold-microvolt = <75000 150000 237000 500000 500000 500000 500000 500000>;
 				qcom,mbhc-headset-vthreshold-microvolt = <1700000>;
 				qcom,mbhc-headphone-vthreshold-microvolt = <50000>;
 
@@ -938,22 +1032,63 @@
 					gpio-controller;
 					#gpio-cells = <2>;
 					reg = <0x42 0x2>;
+
+					/*
+					 * The WSA881x driver only drives its SD_N
+					 * line once the amplifier has attached,
+					 * which is too late for it to answer bus
+					 * enumeration.  Hold the left amplifier
+					 * out of shutdown from the start so that
+					 * the SoundWire master can find it.
+					 *
+					 * SD_N is active low, so "output-low"
+					 * (logical 0) drives the line physically
+					 * high, i.e. the amplifier stays enabled.
+					 * The flags must match the amplifier's
+					 * powerdown-gpios or the driver would
+					 * invert the level.
+					 */
+					wsa-left-sd-n-hog {
+						gpio-hog;
+						gpios = <1 GPIO_ACTIVE_LOW>;
+						output-low;
+						line-name = "wsa-left-sd-n";
+					};
 				};
 
 				swm: soundwire@c85 {
 					compatible = "qcom,soundwire-v1.3.0";
 					reg = <0xc85 0x40>;
 					interrupts-extended = <&wcd9340 20>;
+
 					qcom,dout-ports = <6>;
 					qcom,din-ports = <2>;
 					qcom,ports-sinterval-low = /bits/ 8 <0x07 0x1f 0x3f 0x07 0x1f 0x3f 0x0f 0x0f>;
 					qcom,ports-offset1 = /bits/ 8 <0x01 0x02 0x0c 0x06 0x12 0x0d 0x07 0x0a>;
 					qcom,ports-offset2 = /bits/ 8 <0x00 0x00 0x1f 0x00 0x00 0x1f 0x00 0x00>;
+
 					#sound-dai-cells = <1>;
 					clocks = <&wcd9340>;
 					clock-names = "iface";
 					#address-cells = <2>;
 					#size-cells = <0>;
+
+					/*
+					 * Same speaker arrangement as the Lenovo
+					 * Flex 5G (SC8180X): the left amplifier
+					 * hangs off WCD9340 GPIO1 at SoundWire
+					 * unique ID 3 and the right one off GPIO2
+					 * at unique ID 4.  Both are wired into the
+					 * SLIM Playback DAI link.
+					 */
+					right_spkr: speaker@0,4 {
+						compatible = "sdw10217211000";
+						reg = <0 4>;
+						powerdown-gpios = <&wcdgpio 2 GPIO_ACTIVE_LOW>;
+						#thermal-sensor-cells = <0>;
+						sound-name-prefix = "SpkrRight";
+						#sound-dai-cells = <0>;
+					};
 
 					left_spkr: speaker@0,3 {
 						compatible = "sdw10217211000";
@@ -963,19 +1098,9 @@
 						sound-name-prefix = "SpkrLeft";
 						#sound-dai-cells = <0>;
 					};
-
-					right_spkr: speaker@0,4 {
-						compatible = "sdw10217211000";
-						reg = <0 4>;
-						powerdown-gpios = <&wcdgpio 2 GPIO_ACTIVE_LOW>;
-						#thermal-sensor-cells = <0>;
-						sound-name-prefix = "SpkrRight";
-						#sound-dai-cells = <0>;
-					};
 				};
 			};
 		};
-
 	};
 };
 
@@ -1001,6 +1126,17 @@
 	bluetooth {
 		compatible = "qcom,wcn3998-bt";
 		firmware-name = "crnv21.bin", "crbtfw21.tlv";
+
+		/* The controller is not provisioned with an address (no OTP and
+		 * nothing in secure world), so it boots with the placeholder
+		 * from the generic qca/crnv21.bin NVM and btqca leaves it
+		 * HCI_UNCONFIGURED, which keeps it out of the mgmt index list.
+		 * Give it a synthetic one; the kernel programs it into the chip
+		 * during every setup.  Little-endian, per
+		 * bindings/net/bluetooth/bluetooth-controller.yaml:
+		 * 14:16:9E:CE:AD:60
+		 */
+		local-bd-address = [60 ad ce 9e 16 14];
 
 		vddio-supply = <&vreg_s4a_1p8>;
 		vddxo-supply = <&vreg_l7a_1p8>;
@@ -1138,14 +1274,6 @@
 		bias-disable;
 	};
 
-	wcd_intr_default: wcd-intr-default-state {
-		pins = "gpio123";
-		function = "gpio";
-		bias-pull-down;
-		drive-strength = <2>;
-		input-enable;
-	};
-
 	i2c1_active: i2c1-active-state {
 		pins = "gpio114", "gpio115";
 		function = "qup1";
@@ -1160,6 +1288,30 @@
 
 		bias-pull-up;
 		drive-strength = <2>;
+	};
+
+	ts_irq_active: ts-irq-active-state {
+		pins = "gpio122";
+		function = "gpio";
+
+		bias-pull-up;
+	};
+
+	wcd_reset_default: wcd-reset-default-state {
+		pins = "gpio143";
+		function = "gpio";
+
+		bias-disable;
+		drive-strength = <2>;
+	};
+
+	wcd_intr_default: wcd-intr-default-state {
+		pins = "gpio123";
+		function = "gpio";
+
+		bias-pull-down;
+		drive-strength = <2>;
+		input-enable;
 	};
 
 	i2c7_active: i2c7-active-state {
@@ -1268,13 +1420,6 @@
 		bias-pull-up;
 	};
 
-	ts_irq_active: ts-irq-active-state {
-		pins = "gpio122";
-		function = "gpio";
-
-		bias-pull-up;
-	};
-
 	usbprim_sbu_default: usbprim-sbu-state {
 		oe-n-pins {
 			pins = "gpio152";
@@ -1328,5 +1473,109 @@
 			function = "qup13";
 			bias-pull-up;
 		};
+	};
+};
+
+/*
+ * Enable the PM8150 PON power key.  sc8180x-pmics.dtsi declares the node but
+ * leaves it disabled, and upstream enables it per board (3706bcfbdb8a,
+ * "arm64: dts: qcom: sc8180x: Enable the power key" - done for Primus and the
+ * Lenovo Flex 5G).  Without it there is no KEY_POWER input device at all, and
+ * since pm8941-pwrkey registers as a wakeup source by default
+ * (wakeup_source_default = true) there is also no way to wake the machine with
+ * the power button - which is what a suspend hang looks like from the outside.
+ */
+&pmc8180_pwrkey {
+	status = "okay";
+};
+
+/*
+ * Volume down is the PON's RESIN line, not a PMIC GPIO (ACPI pin 0x0001 on
+ * PM01, next to the power key at 0x0000).  sc8180x-pmics.dtsi declares it
+ * disabled, as upstream does for the PMIC nodes; the same enable exists on the
+ * Surface Duo (sm8150-microsoft-surface-duo.dts) for exactly this key.
+ */
+&pmc8180_resin {
+	status = "okay";
+	linux,code = <KEY_VOLUMEDOWN>;
+};
+
+/*
+ * Volume up is a PMIC GPIO.  Both readings below are declared for now, both as
+ * inputs with an internal pull-up - matching the Surface Pro X port, which
+ * drives its volume keys active-low with a pull-up.  If a key reports the
+ * opposite of what is pressed, the flag (or the bias) is what needs flipping.
+ */
+&pmc8180_1_gpios {
+	volume_up_6_default_state: volume-up-6-default-state {
+		pins = "gpio6";
+		function = "normal";
+		input-enable;
+		bias-pull-up;
+		qcom,drive-strength = <0>;
+	};
+
+	volume_up_5_default_state: volume-up-5-default-state {
+		pins = "gpio5";
+		function = "normal";
+		input-enable;
+		bias-pull-up;
+		qcom,drive-strength = <0>;
+	};
+};
+
+/*
+ * GPU DVFS: the full set this part advertises.
+ *
+ * sc8180x.dtsi carries the stock SC8180X table (…, 461, 500, 514 MHz).  The
+ * part in this board is binned higher, and its own ACPI tables
+ * ("ENGINE_PSTATE_SET" 0x02 / "GRAPHICS_FREQ_CONTROL" / "CORE_CLOCK") list
+ * further states — the profile Windows runs tops out at 670 MHz:
+ *
+ *     530 MHz @ NOM      (0x100)
+ *     595 MHz @ NOM_L1   (0x140)
+ *     670 MHz @ TURBO_L1 (0x1a0)
+ *
+ * Declaring them here is all that is needed: a6xx_hfi_send_perf_table() hands
+ * the whole OPP table to the GMU (frequencies and, per level, the GX rail arc
+ * vote derived from opp-level), so these become real firmware DVFS levels.
+ * Each of the three levels is already used by a stock state (405/461/514 MHz),
+ * so the RPMh "gfx.lvl" lookup cannot fail on them.  The 625 MHz (TURBO) and
+ * 718 MHz (TURBO_L2) states of the higher profiles are deliberately left out.
+ */
+&gpu_opp_table {
+	opp-530000000 {
+		opp-hz = /bits/ 64 <530000000>;
+		opp-level = <RPMH_REGULATOR_LEVEL_NOM>;
+	};
+
+	opp-595000000 {
+		opp-hz = /bits/ 64 <595000000>;
+		opp-level = <RPMH_REGULATOR_LEVEL_NOM_L1>;
+	};
+
+	opp-670000000 {
+		opp-hz = /bits/ 64 <670000000>;
+		opp-level = <RPMH_REGULATOR_LEVEL_TURBO_L1>;
+	};
+};
+
+/*
+ * Debug aid: persistent RAM for oops/panic records, so a freeze that ends in a
+ * panic still leaves the kernel log behind.  That is the only way to see how
+ * far a hanging probe got, since journald cannot flush during a bus stall
+ * (read it after the reboot with `sudo cat /sys/fs/pstore/dmesg-ramoops-0`).
+ * To make a stall produce a panic rather than just a report:
+ *   echo 1 | sudo tee /proc/sys/kernel/panic_on_rcu_stall
+ */
+&reserved_memory {
+	ramoops@a0500000 {
+		compatible = "ramoops";
+		reg = <0x0 0xa0500000 0x0 0x100000>;
+		record-size = <0x40000>;
+		console-size = <0x40000>;
+		ftrace-size = <0x40000>;
+		pmsg-size = <0x20000>;
+		ecc-size = <16>;
 	};
 };
