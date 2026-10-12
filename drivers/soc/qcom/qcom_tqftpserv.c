@@ -92,12 +92,26 @@ static const char * const readonly_prefixes[] = {
 };
 
 /* Candidate directory prefixes for request_firmware(), in priority order.
- * The first two match the built-in EXTRA_FIRMWARE blobs; the bare name
- * covers a filesystem fallback under /lib/firmware.
+ * The bare name covers a filesystem fallback under /lib/firmware.
+ *
+ * The device-specific directory must come first. The modem asks for
+ * /readonly/firmware/image/wlanmdsp.mbn and we resolve it to the first
+ * candidate that exists, so whichever directory wins decides which WLAN DSP
+ * image the MPSS loads:
+ *
+ *   qcom/XIAOMI/BOOK124/wlanmdsp.mbn   4316952 bytes  (this machine's image)
+ *   ath10k/WCN3990/hw1.0/wlanmdsp.mbn  3725044 bytes  (generic linux-firmware)
+ *
+ * The generic image is *transferable but not loadable* here: tqftpserv serves
+ * it completely, the DSP then rejects it and re-requests from a new port
+ * forever. wlan_process never reaches ready, so the MPSS watchdog fires
+ * (dog_virtual_root.c: "User-PD grace timer expired for wlan_process") and
+ * reset-loops the whole modem, which shows up as "no wlan0" with no ath10k
+ * probe at all. Keeping the device directory first is what makes WiFi work.
  */
 static const char * const fw_dir_prefixes[] = {
-	"ath10k/WCN3990/hw1.0/",
 	"qcom/XIAOMI/BOOK124/",
+	"ath10k/WCN3990/hw1.0/",
 	"qcom/sdm845/",
 	"",
 };
