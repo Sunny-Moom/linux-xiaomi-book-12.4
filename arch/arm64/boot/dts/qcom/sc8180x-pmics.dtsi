@@ -142,7 +142,7 @@
 			status = "disabled";
 		};
 
-		rtc@6000 {
+		pmc8180_rtc: rtc@6000 {
 			compatible = "qcom,pm8941-rtc";
 			reg = <0x6000>;
 			reg-names = "rtc", "alarm";

@@ -1698,3 +1698,21 @@
 		ecc-size = <16>;
 	};
 };
+
+/*
+ * The PMIC RTC ticks correctly but has never been set, so it reads 1970 and the
+ * kernel (CONFIG_RTC_HCTOSYS=y, hctosys=1) copies that bogus value into the
+ * system clock on every cold boot.  `hwclock --systohc` fails with -ENODEV:
+ * without `allow-set-time` the rtc-pm8xxx driver takes the "offset" path
+ * (pm8xxx_rtc_update_offset()), which requires either an nvmem cell or usable
+ * UEFI runtime variables -- neither exists here (no nvmem-cells in DT, and
+ * efivars are entirely unavailable on this platform).
+ *
+ * With this property the driver programs the RTC time registers directly
+ * (__pm8xxx_rtc_set_time()), so the clock can be written once and then survives
+ * a cold boot without waiting for NTP.  Same approach as upstream
+ * pmp8074.dtsi and qcs6490-thundercomm-rubikpi3.dts.
+ */
+&pmc8180_rtc {
+	allow-set-time;
+};
