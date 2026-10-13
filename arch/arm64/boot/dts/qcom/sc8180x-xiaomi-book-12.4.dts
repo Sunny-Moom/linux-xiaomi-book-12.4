@@ -1702,17 +1702,31 @@
 /*
  * The PMIC RTC ticks correctly but has never been set, so it reads 1970 and the
  * kernel (CONFIG_RTC_HCTOSYS=y, hctosys=1) copies that bogus value into the
- * system clock on every cold boot.  `hwclock --systohc` fails with -ENODEV:
- * without `allow-set-time` the rtc-pm8xxx driver takes the "offset" path
- * (pm8xxx_rtc_update_offset()), which requires either an nvmem cell or usable
- * UEFI runtime variables -- neither exists here (no nvmem-cells in DT, and
- * efivars are entirely unavailable on this platform).
+ * system clock on every cold boot.
  *
- * With this property the driver programs the RTC time registers directly
- * (__pm8xxx_rtc_set_time()), so the clock can be written once and then survives
- * a cold boot without waiting for NTP.  Same approach as upstream
- * pmp8074.dtsi and qcs6490-thundercomm-rubikpi3.dts.
+ * DO NOT add "allow-set-time" to &pmc8180_rtc.  It was tried on 2026-10-13 and
+ * reverted the same day.  Here is what actually happens with it:
+ *
+ *   - The property does make the driver take the direct-register path
+ *     (__pm8xxx_rtc_set_time() instead of the "offset" path, which needs an
+ *     nvmem cell or usable UEFI runtime variables), and the failure mode changes
+ *     from -ENODEV to -EPERM.  That part behaves as upstream pmp8074.dtsi and
+ *     qcs6490-thundercomm-rubikpi3.dts document.
+ *   - But the write is then refused one layer lower, by the SPMI PMIC arbiter,
+ *     because this platform assigns the RTC register block APID to a different
+ *     execution environment:
+ *         spmi spmi-0: disallowed SPMI write to sid=0, addr=0x6046
+ *     (spmi-pmic-arb.c: write_ee != pmic_arb->ee -> -EPERM; write_ee comes from
+ *     the hardware APID ownership table, not from DT).  The RTC still cannot be
+ *     set, so there was never any benefit.
+ *   - It is actively harmful.  Nothing in userspace holds /dev/rtc0, yet the RTC
+ *     core drives a periodic update (about 64 Hz on this board, cf.
+ *     max_user_freq) and every tick calls rtc_set_time().  With the property
+ *     present each of those calls reaches the arbiter and logs a line: the kernel
+ *     log took about 163000 spmi messages in under an hour, roughly 50 per second.
+ *
+ * Without the property those same periodic writes return -ENODEV early and stay
+ * silent, which is the pre-existing and intended state.  Wall-clock time comes
+ * from systemd-timesyncd (NTP) instead.
  */
-&pmc8180_rtc {
-	allow-set-time;
-};
+
