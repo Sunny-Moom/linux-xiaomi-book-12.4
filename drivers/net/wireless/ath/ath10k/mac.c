@@ -9997,8 +9997,27 @@ int ath10k_mac_register(struct ath10k *ar)
 	int ret;
 
 	if (!is_valid_ether_addr(ar->mac_addr)) {
-		ath10k_warn(ar, "invalid MAC address; choosing random\n");
-		eth_random_addr(ar->mac_addr);
+		/* Xiaomi Book 12.4 (SC8180X / WCN3990) needs a stable address: the
+		 * calibration/EFS data served over rmtfs is a RAM-only shadow here, so
+		 * the WMI event carries no usable address and the card would fall back
+		 * to eth_random_addr() on every probe.  A random address breaks DHCP
+		 * leases and the EUI-64 IPv6 IIDs, and userspace cannot repair it after
+		 * the fact either: iwd resets the interface to the wiphy permanent
+		 * address (this very ar->mac_addr) when it takes the device over.
+		 * Looking at the firmware node first (mac-address / local-mac-address /
+		 * address, then nvmem) makes the permanent address correct from the
+		 * start, so whoever resets it resets it to the same value.
+		 * The value is injected into the DTB at build time (see
+		 * build-scripts/iso-live/build-all.sh), not committed as a board property.
+		 */
+		if (!device_get_mac_address(ar->dev, ar->mac_addr) &&
+		    is_valid_ether_addr(ar->mac_addr))
+			ath10k_info(ar, "MAC address from firmware node: %pM\n",
+				    ar->mac_addr);
+		else {
+			ath10k_warn(ar, "invalid MAC address; choosing random\n");
+			eth_random_addr(ar->mac_addr);
+		}
 	}
 	SET_IEEE80211_PERM_ADDR(ar->hw, ar->mac_addr);
 
